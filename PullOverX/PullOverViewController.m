@@ -3251,12 +3251,9 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
                 if (snapClosed) {
                     [self snapPanelToOpenState:NO];
                 } else if (panelState == POPanelStateClosed) {
-                    NSString *frontMostBundleId = [POApplicationHelper frontMostBundleId];
-                    if (frontMostBundleId.length > 0 &&
-                        [POApplicationHelper isUserFacingApplicationBundleId:frontMostBundleId] &&
-                        ![frontMostBundleId isEqualToString:@"com.apple.springboard"]) {
-                        pinnedBundleId = [frontMostBundleId copy];
-                        [self refreshHandleIconIfNeeded];
+                    if (pinnedBundleId.length > 0 &&
+                        [POApplicationHelper isUserFacingApplicationBundleId:pinnedBundleId]) {
+                        if ([self isHandleVisiblyNubbed]) self.handle.isNubbed = NO;
                         [self beginSplitSessionIfNeeded];
                         [self open];
                     }
