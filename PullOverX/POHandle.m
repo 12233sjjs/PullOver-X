@@ -22,7 +22,6 @@
     UILabel *messageLabel;
     UIVisualEffectView *blurView;
     UITapGestureRecognizer *_tapGestureRecognizer;
-    UITapGestureRecognizer *_doubleTapGestureRecognizer;
     UILongPressGestureRecognizer *quickSwitchLongPress;
     UIPanGestureRecognizer *_panelPanGestureRecognizer;
     CGPoint tapTouchStartPoint;
@@ -121,19 +120,12 @@
         _tapGestureRecognizer.delegate = self;
         [self addGestureRecognizer:_tapGestureRecognizer];
 
-        _doubleTapGestureRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(doubleTap:)];
-        _doubleTapGestureRecognizer.numberOfTapsRequired = 2;
-        _doubleTapGestureRecognizer.delegate = self;
-        [self addGestureRecognizer:_doubleTapGestureRecognizer];
-        [_tapGestureRecognizer requireGestureRecognizerToFail:_doubleTapGestureRecognizer];
-
         quickSwitchLongPress = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(longPress:)];
-        quickSwitchLongPress.minimumPressDuration = .3f;
+        quickSwitchLongPress.minimumPressDuration = .2f;
         quickSwitchLongPress.delegate = self;
         quickSwitchLongPress.cancelsTouchesInView = NO;
         [self addGestureRecognizer:quickSwitchLongPress];
         [_tapGestureRecognizer requireGestureRecognizerToFail:quickSwitchLongPress];
-        [_doubleTapGestureRecognizer requireGestureRecognizerToFail:quickSwitchLongPress];
         _panelPanGestureRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self
                                                                             action:@selector(panelPan:)];
         _panelPanGestureRecognizer.delegate = self;
@@ -194,8 +186,15 @@
         }
     };
     if (animated) {
-        [UIView animateWithDuration:0.3 animations:changes];
+        [UIView animateWithDuration:0.24
+                              delay:0
+                            options:(UIViewAnimationOptionCurveEaseOut |
+                                     UIViewAnimationOptionBeginFromCurrentState |
+                                     UIViewAnimationOptionAllowUserInteraction)
+                         animations:changes
+                         completion:nil];
     } else {
+        [self.layer removeAllAnimations];
         changes();
     }
 }
@@ -222,7 +221,7 @@
 }
 
 -(BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event{
-    if (self.layoutMode == POHandleLayoutModeLandscapeFixedBottomLeft) {
+    if (self.layoutMode == POHandleLayoutModeLandscapeFixedBottomRight) {
         CGFloat horizontalInset = MAX(5.0, (PO_HANDLE_MINIMUM_TOUCH_SIZE - CGRectGetWidth(self.bounds)) / 2.0);
         CGFloat verticalInset = MAX(5.0, (PO_HANDLE_MINIMUM_TOUCH_SIZE - CGRectGetHeight(self.bounds)) / 2.0);
         CGRect hitRect = CGRectInset(self.bounds, -horizontalInset, -verticalInset);
@@ -268,7 +267,7 @@
         CGPoint velocity = [(UIPanGestureRecognizer *)gestureRecognizer velocityInView:self];
         CGFloat absX = fabs(velocity.x);
         CGFloat absY = fabs(velocity.y);
-        if (self.layoutMode == POHandleLayoutModeLandscapeFixedBottomLeft) {
+        if (self.layoutMode == POHandleLayoutModeLandscapeFixedBottomRight) {
             return MAX(absX, absY) > 0.0 && fabs(absX - absY) > 0.01;
         }
         return absX > absY;
@@ -287,10 +286,6 @@
 
 -(void)tap:(UIGestureRecognizer *)recognizer{
     [self.delegate handle:self didReceiveTap:recognizer];
-}
-
--(void)doubleTap:(UIGestureRecognizer *)recognizer{
-    [self.delegate handle:self didReceiveDoubleTap:recognizer];
 }
 
 -(void)longPress:(UIGestureRecognizer *)recognizer{
