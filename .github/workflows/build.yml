@@ -1,0 +1,115 @@
+name: Build PullOver X
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      scheme:
+        description: 'Build scheme'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - roothide
+          - rootless
+          - rootful
+
+jobs:
+  build:
+    name: Build ${{ matrix.scheme }} deb
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        scheme:
+          - roothide
+          - rootless
+          - rootful
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Filter scheme (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.scheme != 'all' && github.event.inputs.scheme != matrix.scheme
+        run: echo "SKIP=true" >> $GITHUB_ENV
+
+      - name: Skip if filtered
+        if: env.SKIP == 'true'
+        run: exit 0
+
+      - name: Install Theos
+        run: |
+          export THEOS=/opt/theos
+          sudo mkdir -p /opt/theos
+          sudo chown -R $USER /opt/theos
+          git clone --recursive https://github.com/theos/theos.git /opt/theos
+          # Install iPhone SDK
+          mkdir -p /opt/theos/sdks
+          # Use Xcode bundled SDK
+          ln -s $(xcrun --sdk iphoneos --show-sdk-path) /opt/theos/sdks/iphoneos.sdk 2>/dev/null || true
+          ls /opt/theos/sdks/
+
+      - name: Install dependencies
+        run: |
+          brew install ldid dpkg
+          # Install libroot & substrate
+          mkdir -p /opt/theos/vendor/lib/iphone/rootless
+          mkdir -p /opt/theos/vendor/lib/iphone/roothide
+          # Download common headers/libraries from theos vendor
+          git clone https://github.com/theos/headers.git /tmp/theos-headers
+          cp -r /tmp/theos-headers/* /opt/theos/include/ 2>/dev/null || true
+          # CydiaSubstrate
+          curl -sL https://github.com/theos/headers/raw/master/substrate.h -o /opt/theos/include/substrate.h 2>/dev/null || true
+          # AltList framework headers are bundled in the project
+
+      - name: Select Xcode
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
+
+      - name: Build ${{ matrix.scheme }}
+        run: |
+          export THEOS=/opt/theos
+          chmod +x build.sh
+          ./build.sh ${{ matrix.scheme }} release
+
+      - name: Upload deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PullOverX-${{ matrix.scheme }}-deb
+          path: packages/*.deb
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(sed -n 's/^Version:[[:space:]]*//p' PullOverX/Package/DEBIAN/control | tr -d '\r')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: PullOver X v${{ steps.version.outputs.version }}
+          files: |
+            artifacts/**/*.deb
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
