@@ -444,6 +444,15 @@ static PODirectionResolverOutput POResolveDirection(PODirectionResolverInput inp
     } else if (input.deviceForm == PODeviceFormPadRotatingSpringBoard &&
                POIsConcreteInterfaceOrientation(input.springBoardOrientation)) {
         sourceOrientation = input.springBoardOrientation;
+    } else if (POIsConcreteInterfaceOrientation(input.physicalOrientation)) {
+        // Fallback: use physical orientation when scene-based orientation is unavailable.
+        // This ensures the handle appears even if scene orientation resolution fails
+        // (e.g. first install, early SpringBoard boot, or newer iOS versions).
+        sourceOrientation = input.physicalOrientation;
+    } else {
+        // Last-resort fallback: assume portrait so the handle always shows up.
+        // Without this, the window is never created if all orientation sources fail.
+        sourceOrientation = UIInterfaceOrientationPortrait;
     }
 
     PODirectionResolverOutput output;
