@@ -282,34 +282,6 @@ static BOOL POExternalPrepareSuspendedOpenRequest(id request) {
     return YES;
 }
 
-static NSString *POExternalTargetBundleIdentifier(id transitionRequest,
-                                                  NSString *hostedBundleId,
-                                                  NSString *sourceBundleId) {
-    id entities = POExternalReadObject(transitionRequest,
-                                       NSSelectorFromString(@"toApplicationSceneEntities"));
-    if (![entities respondsToSelector:@selector(objectEnumerator)]) {
-        return nil;
-    }
-
-    NSString *fallbackTarget = nil;
-    NSEnumerator *enumerator = [entities objectEnumerator];
-    for (id entity in enumerator) {
-        id application = POExternalReadObject(entity, NSSelectorFromString(@"application"));
-        NSString *bundleId = POExternalBundleIdentifier(application);
-        if (bundleId.length == 0) {
-            continue;
-        }
-        if (![bundleId isEqualToString:sourceBundleId] &&
-            [bundleId isEqualToString:hostedBundleId]) {
-            return bundleId;
-        }
-        if (![bundleId isEqualToString:sourceBundleId] && fallbackTarget.length == 0) {
-            fallbackTarget = bundleId;
-        }
-    }
-    return fallbackTarget;
-}
-
 static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
                                                           NSString *bundleId) {
     if (bundleId.length == 0) {
@@ -363,6 +335,13 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
     }
 
     NSString *targetBundleId = POExternalTargetBundleIdentifierFromRequest(request);
+    // A request for the current floating app belongs to the native workspace,
+    // not URL/notification routing. Release only at the foreground transaction
+    // hook: suspended preparation and in-app URLs must not tear down hosting.
+    if (targetBundleId.length > 0 &&
+        [[ContextHostManager activeHostedBundleId] isEqualToString:targetBundleId]) {
+        return completion;
+    }
     id clientProcess = POExternalReadObject(request, NSSelectorFromString(@"clientProcess"));
     if (POExternalIsNotificationLaunch(request, POExternalOpenOptions(request)) ||
         POExternalValueHasNotificationMarker(clientProcess, 0)) {
@@ -568,6 +547,9 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
         ? application
         : POExternalBundleIdentifier(application);
     if (!POExternalIsUserApplicationBundleIdentifier(targetBundleId)) {
+        return options;
+    }
+    if ([[ContextHostManager activeHostedBundleId] isEqualToString:targetBundleId]) {
         return options;
     }
 
@@ -847,24 +829,21 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
         return;
     }
 
-    id originatingProcess = POExternalReadObject(transitionRequest,
-                                                 NSSelectorFromString(@"originatingProcess"));
-    NSString *sourceBundleId = POExternalBundleIdentifierOrString(originatingProcess);
-    NSString *targetBundleId = POExternalTargetBundleIdentifier(transitionRequest,
-                                                                hostedBundleId,
-                                                                sourceBundleId);
-    if (targetBundleId.length == 0 || [targetBundleId isEqualToString:sourceBundleId]) {
+    // These hooks run for native foreground workspace transactions, not the
+    // suspended opens used to prepare a hosted scene. The hosted app may also
+    // be the originating process (for example, a self-directed activation).
+    if (!POExternalTransitionContainsBundleIdentifier(transitionRequest, hostedBundleId)) {
         return;
     }
 
-    BOOL hostedIsTarget = [hostedBundleId isEqualToString:targetBundleId];
-    BOOL hostedIsSource = [hostedBundleId isEqualToString:sourceBundleId];
-    if (!hostedIsTarget || hostedIsSource) {
-        return;
+    // Invalidate delayed URL/notification routes before releasing the lease so
+    // their completions cannot reopen a floating window over this activation.
+    self.routeRequestGeneration += 1;
+    if (self.nativeRouteInFlight) {
+        [self finishNativeRouteForGeneration:self.nativeRouteGeneration];
     }
-
     POXWindow *pullOverWindow = (POXWindow *)[POXWindow sharedWindow];
-    [pullOverWindow.controller prepareForNativeApplicationTakeover:targetBundleId];
+    [pullOverWindow.controller prepareForNativeApplicationTakeover:hostedBundleId];
 }
 
 @end
