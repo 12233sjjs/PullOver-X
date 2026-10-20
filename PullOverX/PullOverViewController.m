@@ -11,7 +11,6 @@
 #import "POQuickSwitchMetrics.h"
 #import "POSplitSessionController.h"
 #import "QuickSwitchHorizontalBarView.h"
-#import "POInstalledAppSearchController.h"
 #import "../POPPath.h"
 #import "../POLocalization.h"
 #import <objc/message.h>
@@ -80,8 +79,6 @@ typedef NS_ENUM(NSUInteger, POHandlePanIntent) {
     POHandlePanIntentOpenPanel,
     POHandlePanIntentClosePanel,
     POHandlePanIntentVerticalCardMove,
-    POHandlePanIntentLockedSnapToWindow,
-    POHandlePanIntentLockedOpenSplit,
 };
 
 static BOOL POIsConcretePresentationOrientation(UIInterfaceOrientation orientation) {
@@ -165,7 +162,6 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     CGFloat panelVerticalMoveStartAnchorY;
     BOOL scrollSnapAnimationInProgress;
     BOOL quickSwitchOpeningApp;
-    BOOL handleSearchDragTracking;
     QuickSwitchHorizontalBarView *quickSwitchHorizontalBarView;
     UIView *quickSwitchInteractionOverlayView;
     UIView<POQuickSwitchMenuPresenting> *presentedQuickSwitchMenu;
@@ -3146,12 +3142,8 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         CGPoint velocity = [recognizer velocityInView:self.view];
         BOOL verticalIntent = fabs(velocity.y) > fabs(velocity.x);
         if (verticalIntent) {
-            if ([[POApplicationHelper settings][@"lockHandlePosition"] boolValue]) {
-                handlePanIntent = POHandlePanIntentNone;
-                [self cancelAutoNubTimer];
-                return;
-            }
-            if (![self canMovePortraitHostedLandscapeCardVertically]) {
+            if ([[POApplicationHelper settings][@"lockHandlePosition"] boolValue] ||
+                ![self canMovePortraitHostedLandscapeCardVertically]) {
                 return;
             }
             CGFloat currentHandleY = [self currentHandleScreenY];
@@ -3201,19 +3193,6 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     }
 
     if (recognizer.state == UIGestureRecognizerStateChanged) {
-        if (handlePanIntent == POHandlePanIntentNone &&
-            [[POApplicationHelper settings][@"lockHandlePosition"] boolValue]) {
-            CGPoint translation = [recognizer translationInView:self.view];
-            if (fabs(translation.y) >= 18.0 && fabs(translation.y) > fabs(translation.x) * 1.2) {
-                handlePanIntent = translation.y < 0
-                    ? POHandlePanIntentLockedSnapToWindow
-                    : POHandlePanIntentLockedOpenSplit;
-            }
-        }
-        if (handlePanIntent == POHandlePanIntentLockedSnapToWindow ||
-            handlePanIntent == POHandlePanIntentLockedOpenSplit) {
-            return;
-        }
         if (handlePanIntent == POHandlePanIntentVerticalCardMove) {
             CGFloat translationY = [recognizer translationInView:self.view].y;
             [self applyPortraitHostedLandscapeVerticalHandleAnchorY:
@@ -3234,27 +3213,6 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     if (recognizer.state == UIGestureRecognizerStateEnded ||
         recognizer.state == UIGestureRecognizerStateCancelled ||
         recognizer.state == UIGestureRecognizerStateFailed) {
-        if (handlePanIntent == POHandlePanIntentLockedSnapToWindow ||
-            handlePanIntent == POHandlePanIntentLockedOpenSplit) {
-            BOOL cancelled = recognizer.state == UIGestureRecognizerStateCancelled ||
-                recognizer.state == UIGestureRecognizerStateFailed;
-            BOOL snapClosed = handlePanIntent == POHandlePanIntentLockedSnapToWindow;
-            CGFloat verticalTravel = [recognizer translationInView:self.view].y;
-            handlePanIntent = POHandlePanIntentNone;
-            if (!cancelled && fabs(verticalTravel) >= 28.0) {
-                if (snapClosed) {
-                    [self snapPanelToOpenState:NO];
-                } else if (panelState == POPanelStateClosed) {
-                    if (pinnedBundleId.length > 0 &&
-                        [POApplicationHelper isUserFacingApplicationBundleId:pinnedBundleId]) {
-                        if ([self isHandleVisiblyNubbed]) self.handle.isNubbed = NO;
-                        [self beginSplitSessionIfNeeded];
-                        [self open];
-                    }
-                }
-            }
-            return;
-        }
         if (handlePanIntent == POHandlePanIntentVerticalCardMove) {
             CGFloat translationY = [recognizer translationInView:self.view].y;
             [self applyPortraitHostedLandscapeVerticalHandleAnchorY:
@@ -3305,62 +3263,8 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     }
 }
 
--(void)presentInstalledAppSearch{
-    if (!NSThread.isMainThread || self.presentedViewController || [self isPanelTransitioning]) {
-        return;
-    }
-    __weak typeof(self) weakSelf = self;
-    POInstalledAppSearchController *picker = [[POInstalledAppSearchController alloc]
-        initWithSelection:^(NSString *bundleIdentifier) {
-            __strong typeof(weakSelf) self = weakSelf;
-            if (!self || ![POApplicationHelper isUserFacingApplicationBundleId:bundleIdentifier]) {
-                return;
-            }
-            if (panelState == POPanelStateClosed) {
-                [self cancelAutoNubTimer];
-                [self beginSplitSessionIfNeeded];
-                [self pinAppWithBundleId:bundleIdentifier];
-                [self open];
-            } else {
-                [self pinAppWithBundleId:bundleIdentifier];
-            }
-        }];
-    UINavigationController *navigation = [[UINavigationController alloc] initWithRootViewController:picker];
-    navigation.modalPresentationStyle = UIModalPresentationFormSheet;
-    [self presentViewController:navigation animated:YES completion:^{
-        [picker focusSearch];
-    }];
-}
-
 -(void)handle:(POHandle *)handle didLongPress:(UILongPressGestureRecognizer *)recognizer{
-    if (handleSearchDragTracking) {
-        if (recognizer.state == UIGestureRecognizerStateEnded) {
-            CGPoint point = [recognizer locationInView:self.view];
-            CGSize size = self.view.bounds.size;
-            BOOL releasedNearCenter = point.x >= size.width * 0.25 &&
-                point.x <= size.width * 0.75 && point.y >= size.height * 0.2 &&
-                point.y <= size.height * 0.8;
-            handleSearchDragTracking = NO;
-            if (releasedNearCenter) {
-                [self presentInstalledAppSearch];
-            } else {
-                [self resetAutoNubTimer];
-            }
-        } else if (recognizer.state == UIGestureRecognizerStateCancelled ||
-                   recognizer.state == UIGestureRecognizerStateFailed) {
-            handleSearchDragTracking = NO;
-            [self resetAutoNubTimer];
-        }
-        return;
-    }
     if (recognizer.state == UIGestureRecognizerStateBegan) {
-        handleSearchDragTracking = panelState == POPanelStateClosed &&
-            [[POApplicationHelper frontMostBundleId] length] > 0 &&
-            ![[POApplicationHelper frontMostBundleId] isEqualToString:@"com.apple.springboard"];
-        if (handleSearchDragTracking) {
-            [self cancelAutoNubTimer];
-            return;
-        }
         if (![self canBeginQuickSwitchSession]) {
             return;
         }
