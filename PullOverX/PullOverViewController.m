@@ -3118,22 +3118,14 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         [self open];
         return;
     }
-    if (panelState == POPanelStateOpen && [self shouldHandleTapRestoreKeyboardZoom]) {
-        [self restoreKeyboardZoomFromHandleTap];
-        [self resetAutoNubTimer];
-        return;
-    }
     if (panelState == POPanelStateOpen) {
-        [self close];
+        NSString *bundleId = [hostSession.activeBundleId copy];
+        if (bundleId.length > 0) {
+            [self openApplicationExternallyFromQuickSwitch:bundleId];
+        } else {
+            [self close];
+        }
     }
-}
-
--(void)handle:(POHandle *)handle didReceiveDoubleTap:(UIGestureRecognizer *)recognizer{
-    if ([self isPanelTransitioning] || panelState != POPanelStateOpen ||
-        hostSession.activeBundleId.length == 0) {
-        return;
-    }
-    [self openApplicationExternallyFromQuickSwitch:[hostSession.activeBundleId copy]];
 }
 
 -(void)handle:(POHandle *)handle didPanPanel:(UIPanGestureRecognizer *)recognizer{
@@ -3645,8 +3637,11 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     [[POSplitSessionController sharedInstance] end];
     [self cancelQuickSwitchPrewarm];
 
-    if (targetIsCurrentHostedApp && panelState != POPanelStateClosed) {
-        [self showCantHostAfterNativeTakeover];
+    if (targetIsCurrentHostedApp) {
+        // A native activation owns this app now. Do not leave an empty or
+        // "can't host" card covering the fullscreen application.
+        [self forceCloseAndReleaseImmediately];
+        [self resetAutoNubTimer];
         return;
     }
 

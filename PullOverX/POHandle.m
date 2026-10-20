@@ -22,7 +22,6 @@
     UILabel *messageLabel;
     UIVisualEffectView *blurView;
     UITapGestureRecognizer *_tapGestureRecognizer;
-    UITapGestureRecognizer *_doubleTapGestureRecognizer;
     UILongPressGestureRecognizer *quickSwitchLongPress;
     UIPanGestureRecognizer *_panelPanGestureRecognizer;
     CGPoint tapTouchStartPoint;
@@ -121,19 +120,12 @@
         _tapGestureRecognizer.delegate = self;
         [self addGestureRecognizer:_tapGestureRecognizer];
 
-        _doubleTapGestureRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(doubleTap:)];
-        _doubleTapGestureRecognizer.numberOfTapsRequired = 2;
-        _doubleTapGestureRecognizer.delegate = self;
-        [self addGestureRecognizer:_doubleTapGestureRecognizer];
-        [_tapGestureRecognizer requireGestureRecognizerToFail:_doubleTapGestureRecognizer];
-
         quickSwitchLongPress = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(longPress:)];
         quickSwitchLongPress.minimumPressDuration = .3f;
         quickSwitchLongPress.delegate = self;
         quickSwitchLongPress.cancelsTouchesInView = NO;
         [self addGestureRecognizer:quickSwitchLongPress];
         [_tapGestureRecognizer requireGestureRecognizerToFail:quickSwitchLongPress];
-        [_doubleTapGestureRecognizer requireGestureRecognizerToFail:quickSwitchLongPress];
         _panelPanGestureRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self
                                                                             action:@selector(panelPan:)];
         _panelPanGestureRecognizer.delegate = self;
@@ -287,10 +279,6 @@
 
 -(void)tap:(UIGestureRecognizer *)recognizer{
     [self.delegate handle:self didReceiveTap:recognizer];
-}
-
--(void)doubleTap:(UIGestureRecognizer *)recognizer{
-    [self.delegate handle:self didReceiveDoubleTap:recognizer];
 }
 
 -(void)longPress:(UIGestureRecognizer *)recognizer{

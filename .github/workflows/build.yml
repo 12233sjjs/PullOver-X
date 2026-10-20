@@ -2,7 +2,7 @@ name: Build PullOver X
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, 'feature/single-tap-fullscreen']
   workflow_dispatch:
     inputs:
       scheme:
@@ -86,7 +86,9 @@ jobs:
     name: Create Release
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
+    permissions:
+      contents: write
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -15,7 +15,6 @@ typedef NS_ENUM(NSUInteger, POHandleLayoutMode) {
 @class POHandle;
 @protocol POHandleDelegate <NSObject>
 - (void)handle:(POHandle *)handle didReceiveTap:(UIGestureRecognizer*)recognizer;
-- (void)handle:(POHandle *)handle didReceiveDoubleTap:(UIGestureRecognizer *)recognizer;
 - (void)handle:(POHandle *)handle didLongPress:(UIGestureRecognizer*)recognizer;
 - (void)handle:(POHandle *)handle didPanPanel:(UIPanGestureRecognizer *)recognizer;
 @end
