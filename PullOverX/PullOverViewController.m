@@ -2125,7 +2125,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 }
 
 -(void)updatePortraitHostedLandscapeHandleForCurrentOffset{
-    if (self.handle.layoutMode != POHandleLayoutModeLandscapeFixedBottomLeft ||
+    if (self.handle.layoutMode != POHandleLayoutModeLandscapeFixedBottomRight ||
         CGRectIsEmpty(keyboardZoomBaseFrame)) {
         return;
     }
@@ -2135,9 +2135,12 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         ? MIN(MAX(scrollView.contentOffset.x / maximumOffset, 0), 1)
         : 0;
 
-    CGFloat openCardX = CGRectGetMinX(keyboardZoomBaseFrame) - maximumOffset;
-    CGFloat openHandleX = openCardX;
-    CGFloat closedHandleX = CGRectGetWidth(self.view.bounds) - CONTENT_EDGE_GAP - CGRectGetWidth(self.handle.bounds);
+    CGFloat handleWidth = CGRectGetWidth(self.handle.bounds);
+    CGFloat closedHandleX = CGRectGetWidth(self.view.bounds) - CONTENT_EDGE_GAP - handleWidth;
+    // Keep the handle on the device's right edge while the card opens,
+    // instead of jumping back to the previous bottom-left anchor.
+    CGFloat openHandleX = CGRectGetMaxX(keyboardZoomBaseFrame) - maximumOffset -
+        handleWidth - CONTENT_EDGE_GAP;
     CGFloat desiredScreenX = closedHandleX + (openHandleX - closedHandleX) * progress;
 
     CGFloat desiredScreenY = CGRectGetMaxY(keyboardZoomBaseFrame) + HANDLE_EDGE_GAP;
@@ -2601,7 +2604,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 
     BOOL horizontalMode = portraitHostedLandscapeOptimization;
     self.handle.layoutMode = horizontalMode
-        ? POHandleLayoutModeLandscapeFixedBottomLeft
+        ? POHandleLayoutModeLandscapeFixedBottomRight
         : POHandleLayoutModeVerticalRail;
     handleScrollView.scrollEnabled = !horizontalMode &&
         ![[POApplicationHelper settings][@"lockHandlePosition"] boolValue];

@@ -9,7 +9,7 @@
 
 typedef NS_ENUM(NSUInteger, POHandleLayoutMode) {
     POHandleLayoutModeVerticalRail,
-    POHandleLayoutModeLandscapeFixedBottomLeft,
+    POHandleLayoutModeLandscapeFixedBottomRight,
 };
 
 @class POHandle;

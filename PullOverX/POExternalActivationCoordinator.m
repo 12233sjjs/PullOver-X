@@ -335,16 +335,30 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
     }
 
     NSString *targetBundleId = POExternalTargetBundleIdentifierFromRequest(request);
+    id clientProcess = POExternalReadObject(request, NSSelectorFromString(@"clientProcess"));
+    BOOL notificationLaunch = POExternalIsNotificationLaunch(request, POExternalOpenOptions(request)) ||
+        POExternalValueHasNotificationMarker(clientProcess, 0);
+    NSString *activeHostedBundleId = [ContextHostManager activeHostedBundleId];
+    BOOL notificationForHostedApplication = notificationLaunch &&
+        targetBundleId.length > 0 && [targetBundleId isEqualToString:activeHostedBundleId] &&
+        [POApplicationHelper isUserFacingApplicationBundleId:targetBundleId];
+    if (notificationForHostedApplication) {
+        ContextHostManager *manager = [ContextHostManager sharedInstance];
+        POXWindow *window = (POXWindow *)[POXWindow sharedWindow];
+        if (manager.isForegroundLeaseActive && window.controller.isPanelActive) {
+            // The native app is already hosted in the split window. A notification
+            // tap should foreground that scene inside its existing floating card.
+            return completion;
+        }
+    }
     // A request for the current floating app belongs to the native workspace,
     // not URL/notification routing. Release only at the foreground transaction
     // hook: suspended preparation and in-app URLs must not tear down hosting.
     if (targetBundleId.length > 0 &&
-        [[ContextHostManager activeHostedBundleId] isEqualToString:targetBundleId]) {
+        [activeHostedBundleId isEqualToString:targetBundleId] && !notificationForHostedApplication) {
         return completion;
     }
-    id clientProcess = POExternalReadObject(request, NSSelectorFromString(@"clientProcess"));
-    if (POExternalIsNotificationLaunch(request, POExternalOpenOptions(request)) ||
-        POExternalValueHasNotificationMarker(clientProcess, 0)) {
+    if (notificationLaunch) {
         if (!POExternalIsUserApplicationBundleIdentifier(targetBundleId)) {
             return completion;
         }
@@ -814,6 +828,15 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
 
 - (void)prepareNativeTakeoverForTransitionRequestIfNeeded:(id)transitionRequest {
     if (!NSThread.isMainThread || !transitionRequest || ![POApplicationHelper isEnabled]) {
+        return;
+    }
+
+    NSString *targetBundleId = POExternalTargetBundleIdentifierFromRequest(transitionRequest);
+    if (targetBundleId.length > 0 &&
+        [targetBundleId isEqualToString:[ContextHostManager activeHostedBundleId]] &&
+        POExternalIsNotificationLaunch(transitionRequest, nil)) {
+        // Notification taps for the app already in the floating scene should
+        // foreground that hosted scene, not release it for native fullscreen.
         return;
     }
 
