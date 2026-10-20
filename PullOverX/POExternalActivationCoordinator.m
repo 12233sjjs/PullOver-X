@@ -439,6 +439,35 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
 
     BOOL hostedRouteAvailable = manager.isForegroundLeaseActive &&
         hostedBundleId.length > 0 && pullOverWindow.controller.isPanelActive;
+    if (hostedRouteAvailable && !documentOpenRequest && !openURL.isFileURL &&
+        ![targetBundleId isEqualToString:hostedBundleId] &&
+        POExternalIsUserApplicationBundleIdentifier(targetBundleId) &&
+        POExternalCanPrepareSuspendedOpenRequest(request)) {
+        BOOL directSourceIsUserApp = POExternalIsUserApplicationBundleIdentifier(directSourceBundleId);
+        BOOL payloadSourceIsUserApp = POExternalIsUserApplicationBundleIdentifier(payloadSourceBundleId);
+        BOOL attributableToWindowFlow = directSourceIsUserApp || payloadSourceIsUserApp ||
+            POExternalIsNotificationLaunch(request, openOptions);
+        if (attributableToWindowFlow && POExternalPrepareSuspendedOpenRequest(request)) {
+            NSUInteger hostGeneration = manager.activeLeaseGeneration;
+            NSUInteger routeGeneration = ++self.routeRequestGeneration;
+            NSString *sourceBundleId = [hostedBundleId copy];
+            POExternalOpenCompletion originalCompletion = completion;
+            POExternalOpenCompletion routedCompletion = ^(NSError *error) {
+                if (originalCompletion) originalCompletion(error);
+                if (error) return;
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    ContextHostManager *currentManager = [ContextHostManager sharedInstance];
+                    if (routeGeneration != self.routeRequestGeneration ||
+                        !currentManager.isForegroundLeaseActive ||
+                        currentManager.activeLeaseGeneration != hostGeneration ||
+                        ![[ContextHostManager activeHostedBundleId] isEqualToString:sourceBundleId]) return;
+                    [((POXWindow *)[POXWindow sharedWindow]).controller
+                        routeExternalApplicationInsidePullOver:targetBundleId];
+                });
+            };
+            return [routedCompletion copy];
+        }
+    }
     if (hostedRouteAvailable) {
         BOOL directHostedSource = [directSourceBundleId isEqualToString:hostedBundleId];
         BOOL payloadHostedSource = [payloadSourceBundleId isEqualToString:hostedBundleId];

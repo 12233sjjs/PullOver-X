@@ -2,7 +2,7 @@ name: Build PullOver X
 
 on:
   push:
-    branches: [main, master, 'feature/single-tap-fullscreen', 'feature/quick-launcher-landscape-notifications']
+    branches: [main, master, 'feature/single-tap-fullscreen', 'feature/quick-launcher-landscape-notifications', 'feature/1.7.3-window-gestures']
   workflow_dispatch:
     inputs:
       scheme:

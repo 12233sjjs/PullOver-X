@@ -270,6 +270,9 @@
         if (self.layoutMode == POHandleLayoutModeLandscapeFixedBottomRight) {
             return MAX(absX, absY) > 0.0 && fabs(absX - absY) > 0.01;
         }
+        if ([[POApplicationHelper settings][@"lockHandlePosition"] boolValue]) {
+            return MAX(absX, absY) > 0.0;
+        }
         return absX > absY;
     }
     return YES;
