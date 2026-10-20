@@ -589,8 +589,7 @@ static void POApplyOrdinarySettings(NSDictionary *settings, BOOL animateSideChan
     [window.controller applyCurrentSettings];
 }
 
-static void POFinishVisibleRecovery(NSUInteger generation,
-                                    UIInterfaceOrientation resolvedSourceOrientation) {
+static void POFinishVisibleRecovery(NSUInteger generation) {
     PODirectionState *state = PODirectionStateOwner();
     if (!window || generation != state.reconcileGeneration) {
         return;
@@ -599,13 +598,6 @@ static void POFinishVisibleRecovery(NSUInteger generation,
     NSDictionary *settings = [POApplicationHelper settings];
     NSString *sceneIdentifier = nil;
     UIInterfaceOrientation source = POCurrentCommittedInterfaceOrientation(&sceneIdentifier);
-    // A scene may still be unavailable during SpringBoard startup. The matching
-    // generation already resolved a physical/portrait fallback; do not reject it
-    // here and repeatedly keep the root view transparent. Prefer a live scene
-    // orientation whenever one has become available.
-    if (!POIsConcreteInterfaceOrientation(source)) {
-        source = resolvedSourceOrientation;
-    }
     POLandscapeDecision decision = POComputeLandscapeDecision(settings, source);
     if (!POSettingsEnabled(settings) || decision.visibility != POLandscapeVisibilityVisible ||
         !POIsConcreteInterfaceOrientation(decision.targetOrientation) ||
@@ -700,7 +692,7 @@ static void POApplyDecision(PODirectionResolverOutput resolution,
                                              duration:resolution.duration
                                            completion:^{
         if (recovering) {
-            POFinishVisibleRecovery(generation, decision.sourceOrientation);
+            POFinishVisibleRecovery(generation);
         }
     }];
     if (!accepted) {
