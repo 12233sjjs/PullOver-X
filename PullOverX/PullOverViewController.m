@@ -2618,13 +2618,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     CGFloat handleViewportHeight = horizontalMode
         ? CGRectGetHeight(bounds)
         : CGRectGetHeight(bounds) * chromeScale;
-    BOOL fullscreenLandscape = shellIsLandscape && panelState == POPanelStateClosed &&
-        UIInterfaceOrientationIsLandscape(hostedLayoutOrientation);
-    if (fullscreenLandscape) {
-        handleViewportHeight = CGRectGetHeight(bounds);
-    }
-    handleScrollView.frame = CGRectMake(CGRectGetWidth(bounds) - handleRailWidth,
-                                        0, handleRailWidth, handleViewportHeight);
+    handleScrollView.frame = CGRectMake(CGRectGetWidth(bounds) - handleRailWidth, 0, handleRailWidth, handleViewportHeight);
     if (!horizontalMode) {
         handleScrollView.center = CGPointMake(handleScrollView.center.x, CGRectGetMidY(bounds));
         handleScrollView.contentSize = CGSizeMake(handleRailWidth, (handleViewportHeight * 2) - self.handle.frame.size.height);
