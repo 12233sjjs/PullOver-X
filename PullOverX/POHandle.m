@@ -268,7 +268,7 @@
         CGPoint velocity = [(UIPanGestureRecognizer *)gestureRecognizer velocityInView:self];
         CGFloat absX = fabs(velocity.x);
         CGFloat absY = fabs(velocity.y);
-        if (self.layoutMode == POHandleLayoutModeLandscapeFixedBottomLeft) {
+        if (self.allowsVerticalMovement || self.layoutMode == POHandleLayoutModeLandscapeFixedBottomLeft) {
             return MAX(absX, absY) > 0.0 && fabs(absX - absY) > 0.01;
         }
         return absX > absY;

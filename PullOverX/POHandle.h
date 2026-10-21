@@ -28,6 +28,7 @@ typedef NS_ENUM(NSUInteger, POHandleLayoutMode) {
 @property (nonatomic) BOOL isNubbed;
 @property (nonatomic) CGFloat restingOriginX;
 @property (nonatomic) POHandleLayoutMode layoutMode;
+@property (nonatomic) BOOL allowsVerticalMovement;
 
 -(instancetype)initWithController:(id)controller;
 -(void)refreshHandleSizeAnimated:(BOOL)animated;

@@ -187,33 +187,91 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 }
 @end
 
-@interface POCenterMenuController : UITableViewController
+@interface POCenterMenuController : UIViewController
 @property(nonatomic, copy) void (^action)(NSInteger);
 @property(nonatomic, copy) void (^cancellation)(void);
+@property(nonatomic, strong) UIView *wheel;
+@property(nonatomic, strong) NSArray<UIButton *> *buttons;
+@property(nonatomic, strong) UIButton *cancelButton;
+@property(nonatomic, strong) UILabel *statusLabel;
 @end
 
 @implementation POCenterMenuController
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"PullOver X";
-    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc]
-        initWithBarButtonSystemItem:UIBarButtonSystemItemCancel target:self action:@selector(cancelMenu)];
+    self.view.backgroundColor = [UIColor.systemBackgroundColor colorWithAlphaComponent:0.94];
+    self.wheel = [[UIView alloc] init];
+    self.wheel.backgroundColor = UIColor.secondarySystemBackgroundColor;
+    [self.view addSubview:self.wheel];
+    NSArray *titles = @[@"搜索应用", @"结束播放应用", @"切换 VPN", @"重载窗口"];
+    NSArray *labels = @[@"搜索应用，在窗口中打开", @"强制关闭正在播放的应用", @"切换 VPN，连接或断开", @"重新加载当前窗口应用"];
+    NSArray *icons = @[@"magnifyingglass", @"speaker.slash", @"network", @"arrow.clockwise"];
+    NSMutableArray *buttons = [NSMutableArray array];
+    for (NSInteger index = 0; index < 4; index++) {
+        UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+        button.tag = index;
+        button.accessibilityLabel = labels[index];
+        [button addTarget:self action:@selector(selectAction:) forControlEvents:UIControlEventTouchUpInside];
+        UIImageView *icon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:icons[index]]];
+        icon.frame = CGRectMake(20, 2, 24, 24);
+        icon.contentMode = UIViewContentModeScaleAspectFit;
+        icon.userInteractionEnabled = NO;
+        [button addSubview:icon];
+        UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(0, 30, 64, 32)];
+        label.text = titles[index];
+        label.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
+        label.textAlignment = NSTextAlignmentCenter;
+        label.numberOfLines = 2;
+        label.textColor = UIColor.labelColor;
+        label.userInteractionEnabled = NO;
+        [button addSubview:label];
+        [self.wheel addSubview:button];
+        [buttons addObject:button];
+    }
+    self.buttons = buttons;
+    self.cancelButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.cancelButton setTitle:@"取消" forState:UIControlStateNormal];
+    self.cancelButton.backgroundColor = UIColor.tertiarySystemBackgroundColor;
+    self.cancelButton.layer.cornerRadius = 24;
+    [self.cancelButton addTarget:self action:@selector(cancelMenu) forControlEvents:UIControlEventTouchUpInside];
+    [self.wheel addSubview:self.cancelButton];
+    self.statusLabel = [[UILabel alloc] init];
+    self.statusLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
+    self.statusLabel.textColor = UIColor.secondaryLabelColor;
+    self.statusLabel.numberOfLines = 3;
+    self.statusLabel.textAlignment = NSTextAlignmentCenter;
+    self.statusLabel.accessibilityTraits = UIAccessibilityTraitUpdatesFrequently;
+    [self.view addSubview:self.statusLabel];
+}
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [self.navigationController setNavigationBarHidden:YES animated:animated];
+}
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    CGRect area = UIEdgeInsetsInsetRect(self.view.bounds, self.view.safeAreaInsets);
+    CGFloat diameter = MIN(360, MIN(CGRectGetWidth(area) - 24, CGRectGetHeight(area) - 80));
+    diameter = MAX(1, diameter);
+    self.wheel.bounds = CGRectMake(0, 0, diameter, diameter);
+    self.wheel.center = CGPointMake(CGRectGetMidX(area), CGRectGetMidY(area) - 24);
+    self.wheel.layer.cornerRadius = diameter / 2;
+    CGFloat radius = (diameter - 64) / 2 - 4;
+    for (NSInteger index = 0; index < self.buttons.count; index++) {
+        CGFloat angle = -M_PI_2 + index * M_PI_2;
+        UIButton *button = self.buttons[index];
+        button.bounds = CGRectMake(0, 0, 64, 64);
+        button.center = CGPointMake(diameter / 2 + cos(angle) * radius,
+                                   diameter / 2 + sin(angle) * radius);
+    }
+    self.cancelButton.bounds = CGRectMake(0, 0, 48, 48);
+    self.cancelButton.center = CGPointMake(diameter / 2, diameter / 2);
+    self.statusLabel.frame = CGRectMake(CGRectGetMinX(area) + 12,
+        CGRectGetMaxY(self.wheel.frame) + 4, MAX(1, CGRectGetWidth(area) - 24), 56);
 }
 - (void)cancelMenu { if (self.cancellation) self.cancellation(); }
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 4; }
-- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
-    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
-    NSArray *titles = @[@"搜索应用", @"结束正在播放的应用", @"切换 VPN", @"重新加载窗口应用"];
-    NSArray *subtitles = @[@"在窗口中打开应用", @"强制关闭当前媒体应用", @"连接或断开已配置的 VPN", @"重新加载当前窗口应用"];
-    NSArray *icons = @[@"magnifyingglass", @"speaker.slash", @"network", @"arrow.clockwise"];
-    cell.textLabel.text = titles[path.row];
-    cell.detailTextLabel.text = subtitles[path.row];
-    cell.imageView.image = [UIImage systemImageNamed:icons[path.row]];
-    return cell;
-}
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
-    [tableView deselectRowAtIndexPath:path animated:YES];
-    if (self.action) self.action(path.row);
+- (void)selectAction:(UIButton *)button {
+    if (self.action) self.action(button.tag);
 }
 @end
 
@@ -224,6 +282,8 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     UINavigationController *appSearchNavigation;
     __weak UIWindow *keyWindowBeforeSearch;
     BOOL handleSearchDragActive;
+    BOOL draggingHandleVertically;
+    CGFloat handleDragStartY;
     NSString *pinnedBundleId;
     UIView *contextView;
     UIView *externalSceneStack;
@@ -518,6 +578,8 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 
     oppositeHandle = [[POHandle alloc] initWithController:self];
     oppositeHandle.delegate = self;
+    oppositeHandle.allowsVerticalMovement = YES;
+    self.handle.allowsVerticalMovement = YES;
     oppositeHandle.layoutMode = POHandleLayoutModeLandscapeFixedBottomLeft;
     [self.view addSubview:oppositeHandle];
     appSearchTarget = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"magnifyingglass.circle.fill"]];
@@ -624,10 +686,27 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     BOOL primaryOnLeft = primaryCenter.x < CGRectGetMidX(self.view.bounds);
     CGFloat oppositeX = primaryOnLeft ? CGRectGetWidth(self.view.bounds) - size - HANDLE_EDGE_GAP : HANDLE_EDGE_GAP;
     oppositeHandle.restingOriginX = oppositeX;
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    NSNumber *primaryRatio = [defaults objectForKey:@"primaryHandleVerticalRatio"];
+    if (primaryRatio) {
+        primaryCenter.y = minimumY + MIN(MAX(primaryRatio.doubleValue, 0), 1) * (maximumY - minimumY);
+        CGPoint localCenter = [self.view convertPoint:primaryCenter toView:self.handle.superview];
+        self.handle.center = localCenter;
+    }
     CGFloat middleY = (minimumY + maximumY) / 2;
-    CGFloat oppositeY = primaryCenter.y <= middleY
+    NSNumber *oppositeRatio = [defaults objectForKey:@"oppositeHandleVerticalRatio"];
+    CGFloat oppositeY = oppositeRatio
+        ? minimumY + MIN(MAX(oppositeRatio.doubleValue, 0), 1) * (maximumY - minimumY)
+        : primaryCenter.y <= middleY
         ? minimumY + (maximumY - minimumY) * 0.75
         : minimumY + (maximumY - minimumY) * 0.25;
+    CGFloat separation = MIN(MAX(60, size + 12), (maximumY - minimumY) / 2);
+    if (fabs(oppositeY - primaryCenter.y) < separation) {
+        CGFloat above = primaryCenter.y - separation;
+        CGFloat below = primaryCenter.y + separation;
+        oppositeY = above >= minimumY && (below > maximumY || oppositeY <= primaryCenter.y) ? above : below;
+    }
+    oppositeY = MIN(MAX(oppositeY, minimumY), maximumY);
     oppositeHandle.frame = CGRectMake(oppositeX, oppositeY - size / 2, size, size);
     oppositeHandle.imageView.image = self.handle.imageView.image;
     appSearchTarget.bounds = CGRectMake(0, 0, 64, 64);
@@ -656,7 +735,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     if (appSearchNavigation || !self.view.window || UIApplication.sharedApplication.protectedDataAvailable == NO) return;
     [self dismissPresentedQuickSwitchMenuImmediately];
     [self cancelAutoNubTimer];
-    POCenterMenuController *menu = [[POCenterMenuController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+    POCenterMenuController *menu = [[POCenterMenuController alloc] init];
     __weak typeof(self) weakSelf = self;
     menu.cancellation = ^{ [weakSelf dismissAppSearch]; };
     menu.action = ^(NSInteger action) { [weakSelf performCenterAction:action]; };
@@ -680,7 +759,9 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     status.textAlignment = NSTextAlignmentCenter;
     status.textColor = UIColor.secondaryLabelColor;
     UIViewController *controller = appSearchNavigation.topViewController;
-    if ([controller isKindOfClass:UITableViewController.class]) {
+    if ([controller isKindOfClass:POCenterMenuController.class]) {
+        ((POCenterMenuController *)controller).statusLabel.text = message;
+    } else if ([controller isKindOfClass:UITableViewController.class]) {
         ((UITableViewController *)controller).tableView.tableFooterView = status;
     }
     UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, message);
@@ -704,6 +785,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
             [weakSelf dismissAppSearch];
             [weakSelf pinAppWithBundleId:bundle];
         };
+        [appSearchNavigation setNavigationBarHidden:NO animated:YES];
         [appSearchNavigation pushViewController:search animated:YES];
         return;
     }
@@ -3036,6 +3118,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 }
 
 -(void)dismissTransientInteractionUI{
+    draggingHandleVertically = NO;
     [self dismissAppSearch];
     handleSearchDragActive = NO;
     appSearchTarget.hidden = YES;
@@ -3480,6 +3563,40 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 }
 
 -(void)handle:(POHandle *)handle didPanPanel:(UIPanGestureRecognizer *)recognizer{
+    if (recognizer.state == UIGestureRecognizerStateBegan) {
+        CGPoint velocity = [recognizer velocityInView:self.view];
+        draggingHandleVertically = fabs(velocity.y) > fabs(velocity.x);
+        handleDragStartY = [handle.superview convertPoint:handle.center toView:self.view].y;
+        if (draggingHandleVertically) [self cancelAutoNubTimer];
+    }
+    if (draggingHandleVertically) {
+        if (![[POApplicationHelper settings][@"lockHandlePosition"] boolValue]) {
+            CGFloat size = CGRectGetHeight(handle.bounds);
+            CGFloat minimumY = self.view.safeAreaInsets.top + size / 2 + HANDLE_EDGE_GAP;
+            CGFloat maximumY = MAX(minimumY, CGRectGetHeight(self.view.bounds) -
+                self.view.safeAreaInsets.bottom - size / 2 - HANDLE_EDGE_GAP);
+            CGFloat y = MIN(MAX(handleDragStartY + [recognizer translationInView:self.view].y, minimumY), maximumY);
+            POHandle *other = handle == oppositeHandle ? self.handle : oppositeHandle;
+            CGFloat otherY = [other.superview convertPoint:other.center toView:self.view].y;
+            CGFloat separation = MIN(MAX(60, size + 12), (maximumY - minimumY) / 2);
+            if (fabs(y - otherY) < separation) {
+                CGFloat above = otherY - separation;
+                CGFloat below = otherY + separation;
+                y = above >= minimumY && (below > maximumY || handleDragStartY <= otherY) ? above : below;
+            }
+            NSString *key = handle == oppositeHandle ? @"oppositeHandleVerticalRatio" : @"primaryHandleVerticalRatio";
+            CGFloat ratio = (MIN(MAX(y, minimumY), maximumY) - minimumY) / MAX(1, maximumY - minimumY);
+            [NSUserDefaults.standardUserDefaults setDouble:ratio forKey:key];
+            [self layoutAdditionalControls];
+        }
+        if (recognizer.state == UIGestureRecognizerStateEnded ||
+            recognizer.state == UIGestureRecognizerStateCancelled ||
+            recognizer.state == UIGestureRecognizerStateFailed) {
+            draggingHandleVertically = NO;
+            [self resetAutoNubTimer];
+        }
+        return;
+    }
     if (handle == oppositeHandle) {
         if (recognizer.state == UIGestureRecognizerStateEnded &&
             fabs([recognizer translationInView:self.view].x) > 20 && ![self isPanelTransitioning]) {
@@ -4276,9 +4393,9 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 }
 
 -(void)scrollViewDidScroll:(UIScrollView *)sv{
-    [self layoutAdditionalControls];
     if (sv == scrollView) {
         [self updatePortraitHostedLandscapeHandleForCurrentOffset];
+        [self layoutAdditionalControls];
         [self updateInteractionBackdropsAnimated:NO];
 
         CGFloat shadowProgress = MIN(MAX(sv.contentOffset.x / CONTENT_SHADOW_FADE_DISTANCE, 0), 1);
@@ -4295,6 +4412,8 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         if (panelState == POPanelStateInteractive && !interactiveHostIntentIssued && rawOffsetX > 0.5) {
             [self issueInteractiveHostIntentIfNeeded];
         }
+    } else if (sv == handleScrollView) {
+        [self layoutAdditionalControls];
     }
 }
 
