@@ -115,6 +115,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 @property(nonatomic, copy) void (^cancellation)(void);
 @property(nonatomic, strong) NSArray<NSDictionary *> *applications;
 @property(nonatomic, strong) NSArray<NSDictionary *> *matches;
+@property(nonatomic, strong) UIView *dismissSwipeArea;
 @end
 
 @implementation POAppSearchController
@@ -152,6 +153,56 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         return [a[@"name"] localizedCaseInsensitiveCompare:b[@"name"]];
     }];
     [self searchBar:search textDidChange:@""];
+}
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [self.navigationController setNavigationBarHidden:NO animated:NO];
+}
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    UIView *container = self.navigationController.view;
+    if (!container || self.dismissSwipeArea) return;
+    UIView *area = [[UIView alloc] init];
+    area.translatesAutoresizingMaskIntoConstraints = NO;
+    area.backgroundColor = UIColor.systemBackgroundColor;
+    [area addGestureRecognizer:[[UIPanGestureRecognizer alloc]
+        initWithTarget:self action:@selector(swipeToClose:)]];
+    [container addSubview:area];
+    self.dismissSwipeArea = area;
+    NSLayoutYAxisAnchor *bottom = container.safeAreaLayoutGuide.bottomAnchor;
+    if (@available(iOS 15.0, *)) bottom = container.keyboardLayoutGuide.topAnchor;
+    [NSLayoutConstraint activateConstraints:@[
+        [area.leadingAnchor constraintEqualToAnchor:container.leadingAnchor],
+        [area.trailingAnchor constraintEqualToAnchor:container.trailingAnchor],
+        [area.bottomAnchor constraintEqualToAnchor:bottom],
+        [area.heightAnchor constraintEqualToConstant:56],
+    ]];
+    UIView *grip = [[UIView alloc] init];
+    grip.translatesAutoresizingMaskIntoConstraints = NO;
+    grip.backgroundColor = UIColor.secondaryLabelColor;
+    grip.layer.cornerRadius = 2;
+    [area addSubview:grip];
+    [NSLayoutConstraint activateConstraints:@[
+        [grip.centerXAnchor constraintEqualToAnchor:area.centerXAnchor],
+        [grip.centerYAnchor constraintEqualToAnchor:area.centerYAnchor],
+        [grip.widthAnchor constraintEqualToConstant:36],
+        [grip.heightAnchor constraintEqualToConstant:4],
+    ]];
+    self.tableView.contentInset = UIEdgeInsetsMake(0, 0, 56, 0);
+}
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    [self.dismissSwipeArea removeFromSuperview];
+    self.dismissSwipeArea = nil;
+}
+- (void)swipeToClose:(UIPanGestureRecognizer *)gesture {
+    CGPoint translation = [gesture translationInView:gesture.view];
+    CGPoint velocity = [gesture velocityInView:gesture.view];
+    if (gesture.state == UIGestureRecognizerStateEnded &&
+        -translation.y > fabs(translation.x) &&
+        (translation.y <= -40 || velocity.y <= -400)) {
+        [self cancelSearch];
+    }
 }
 - (void)cancelSearch {
     if (self.cancellation) self.cancellation();
@@ -702,6 +753,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 
 -(void)layoutAdditionalControls{
     if (!oppositeHandle || !self.handle || CGRectIsEmpty(self.view.bounds)) return;
+    oppositeHandle.hidden = panelState != POPanelStateClosed;
     CGFloat size = CGRectGetWidth(oppositeHandle.bounds);
     CGPoint primaryCenter = [self.handle.superview convertPoint:self.handle.center toView:self.view];
     CGFloat minimumY = self.view.safeAreaInsets.top + size / 2 + HANDLE_EDGE_GAP;
@@ -1002,6 +1054,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 }
 
 -(void)updateInteractionBackdropsAnimated:(BOOL)animated{
+    oppositeHandle.hidden = panelState != POPanelStateClosed;
     if (!panelBackdropView || !quickSwitchBackdropView || !scrollView) {
         return;
     }
@@ -2703,6 +2756,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         [self resetAutoNubTimer];
     }
     [self scheduleFinishPanelDragZoomIfIdle];
+    [self layoutAdditionalControls];
 }
 
 -(void)preparePanelForOpenPresentationIfNeeded{
@@ -2722,6 +2776,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     }
 
     panelState = POPanelStateOpening;
+    oppositeHandle.hidden = YES;
     if (previousLayoutMode != [self currentQuickSwitchLayoutMode]) {
         [self applyLayoutPreservingHandlePosition:YES];
     }
