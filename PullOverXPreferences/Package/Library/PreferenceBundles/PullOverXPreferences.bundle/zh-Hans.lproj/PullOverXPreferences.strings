@@ -27,6 +27,7 @@
 "Auto-Nub Handle when Inactive" = "不活动时自动收起把手";
 "Handle Size" = "把手大小";
 "Window Size" = "窗口大小比例";
+"Window Size Mode" = "窗口大小模式";
 "Lock Handle Position" = "锁定把手位置";
 "Handle Opacity" = "把手透明度";
 "Handle Hidden Percentage" = "隐藏比例";

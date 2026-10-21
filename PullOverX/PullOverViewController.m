@@ -15,6 +15,9 @@
 #import "../POLocalization.h"
 #import <objc/message.h>
 #include <stdlib.h>
+#include <signal.h>
+#include <unistd.h>
+#include <dlfcn.h>
 #define HANDLE_EDGE_GAP 5
 #define CONTENT_EDGE_GAP 5
 #define CONTENT_CORNER_RADIUS 20
@@ -179,6 +182,36 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 }
 @end
 
+@interface POCenterMenuController : UITableViewController
+@property(nonatomic, copy) void (^action)(NSInteger);
+@property(nonatomic, copy) void (^cancellation)(void);
+@end
+
+@implementation POCenterMenuController
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.title = @"PullOver X";
+    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc]
+        initWithBarButtonSystemItem:UIBarButtonSystemItemCancel target:self action:@selector(cancelMenu)];
+}
+- (void)cancelMenu { if (self.cancellation) self.cancellation(); }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 4; }
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
+    NSArray *titles = @[@"搜索应用", @"结束正在播放的应用", @"切换 VPN", @"重新加载窗口应用"];
+    NSArray *subtitles = @[@"在窗口中打开应用", @"强制关闭当前媒体应用", @"连接或断开已配置的 VPN", @"重新加载当前窗口应用"];
+    NSArray *icons = @[@"magnifyingglass", @"speaker.slash", @"network", @"arrow.clockwise"];
+    cell.textLabel.text = titles[path.row];
+    cell.detailTextLabel.text = subtitles[path.row];
+    cell.imageView.image = [UIImage systemImageNamed:icons[path.row]];
+    return cell;
+}
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
+    [tableView deselectRowAtIndexPath:path animated:YES];
+    if (self.action) self.action(path.row);
+}
+@end
+
 @interface PullOverViewController ()<POHostSessionControllerDelegate, UIGestureRecognizerDelegate>{
     POHandle *oppositeHandle;
     UIImageView *appSearchTarget;
@@ -310,6 +343,8 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 -(void)showAppSearch;
 -(void)dismissAppSearch;
 -(void)layoutAdditionalControls;
+-(void)performCenterAction:(NSInteger)action;
+-(void)showCenterMessage:(NSString *)message;
 
 @end
 
@@ -568,13 +603,18 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 
 -(void)layoutAdditionalControls{
     CGFloat size = CGRectGetWidth(oppositeHandle.bounds);
-    oppositeHandle.restingOriginX = HANDLE_EDGE_GAP;
     CGPoint primaryCenter = [self.handle.superview convertPoint:self.handle.center toView:self.view];
     CGFloat minimumY = self.view.safeAreaInsets.top + size / 2 + HANDLE_EDGE_GAP;
     CGFloat maximumY = MAX(minimumY, CGRectGetHeight(self.view.bounds) -
         self.view.safeAreaInsets.bottom - size / 2 - HANDLE_EDGE_GAP);
-    oppositeHandle.frame = CGRectMake(HANDLE_EDGE_GAP,
-        MIN(MAX(primaryCenter.y, minimumY), maximumY) - size / 2, size, size);
+    BOOL primaryOnLeft = primaryCenter.x < CGRectGetMidX(self.view.bounds);
+    CGFloat oppositeX = primaryOnLeft ? CGRectGetWidth(self.view.bounds) - size - HANDLE_EDGE_GAP : HANDLE_EDGE_GAP;
+    oppositeHandle.restingOriginX = oppositeX;
+    CGFloat middleY = (minimumY + maximumY) / 2;
+    CGFloat oppositeY = primaryCenter.y <= middleY
+        ? minimumY + (maximumY - minimumY) * 0.75
+        : minimumY + (maximumY - minimumY) * 0.25;
+    oppositeHandle.frame = CGRectMake(oppositeX, oppositeY - size / 2, size, size);
     oppositeHandle.imageView.image = self.handle.imageView.image;
     appSearchTarget.bounds = CGRectMake(0, 0, 64, 64);
     appSearchTarget.center = CGPointMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds));
@@ -602,14 +642,11 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     if (appSearchNavigation || !self.view.window || UIApplication.sharedApplication.protectedDataAvailable == NO) return;
     [self dismissPresentedQuickSwitchMenuImmediately];
     [self cancelAutoNubTimer];
-    POAppSearchController *search = [[POAppSearchController alloc] initWithStyle:UITableViewStylePlain];
+    POCenterMenuController *menu = [[POCenterMenuController alloc] initWithStyle:UITableViewStyleInsetGrouped];
     __weak typeof(self) weakSelf = self;
-    search.cancellation = ^{ [weakSelf dismissAppSearch]; };
-    search.selection = ^(NSString *bundle) {
-        [weakSelf dismissAppSearch];
-        [weakSelf pinAppWithBundleId:bundle];
-    };
-    appSearchNavigation = [[UINavigationController alloc] initWithRootViewController:search];
+    menu.cancellation = ^{ [weakSelf dismissAppSearch]; };
+    menu.action = ^(NSInteger action) { [weakSelf performCenterAction:action]; };
+    appSearchNavigation = [[UINavigationController alloc] initWithRootViewController:menu];
     [self addChildViewController:appSearchNavigation];
     [self.view addSubview:appSearchNavigation.view];
     appSearchNavigation.view.transform = [[POApplicationHelper settings][@"leftHanded"] boolValue]
@@ -620,6 +657,108 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         if (window.isKeyWindow) { keyWindowBeforeSearch = window; break; }
     }
     [self.view.window makeKeyWindow];
+}
+
+-(void)showCenterMessage:(NSString *)message{
+    UILabel *status = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 320, 80)];
+    status.text = message;
+    status.numberOfLines = 0;
+    status.textAlignment = NSTextAlignmentCenter;
+    status.textColor = UIColor.secondaryLabelColor;
+    UIViewController *controller = appSearchNavigation.topViewController;
+    if ([controller isKindOfClass:UITableViewController.class]) {
+        ((UITableViewController *)controller).tableView.tableFooterView = status;
+    }
+    UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, message);
+}
+
+-(BOOL)terminateUserApplication:(NSString *)bundle{
+    if (![POApplicationHelper isUserFacingApplicationBundleId:bundle] ||
+        [bundle isEqualToString:@"com.apple.springboard"]) return NO;
+    ContextHostManager *manager = [ContextHostManager sharedInstance];
+    int pid = [manager processIdentifierForBundleId:bundle];
+    if (pid <= 1 || pid == getpid()) return NO;
+    return kill(pid, SIGKILL) == 0;
+}
+
+-(void)performCenterAction:(NSInteger)action{
+    if (action == 0) {
+        POAppSearchController *search = [[POAppSearchController alloc] initWithStyle:UITableViewStylePlain];
+        __weak typeof(self) weakSelf = self;
+        search.cancellation = ^{ [weakSelf dismissAppSearch]; };
+        search.selection = ^(NSString *bundle) {
+            [weakSelf dismissAppSearch];
+            [weakSelf pinAppWithBundleId:bundle];
+        };
+        [appSearchNavigation pushViewController:search animated:YES];
+        return;
+    }
+    if (action == 1) {
+        id controllerClass = NSClassFromString(@"SBMediaController");
+        SEL shared = NSSelectorFromString(@"sharedInstance");
+        SEL nowPlaying = NSSelectorFromString(@"nowPlayingApplication");
+        id controller = [controllerClass respondsToSelector:shared]
+            ? ((id (*)(id, SEL))objc_msgSend)(controllerClass, shared) : nil;
+        id application = [controller respondsToSelector:nowPlaying]
+            ? ((id (*)(id, SEL))objc_msgSend)(controller, nowPlaying) : nil;
+        NSString *bundle = [application respondsToSelector:@selector(bundleIdentifier)]
+            ? [application bundleIdentifier] : nil;
+        if (![self terminateUserApplication:bundle]) {
+            [self showCenterMessage:@"没有可关闭的媒体应用，或系统拒绝结束该应用。"];
+        } else {
+            [self dismissAppSearch];
+        }
+        return;
+    }
+    if (action == 2) {
+        // Reuse the iOS 16 VPN preferences controller's configured-connection logic.
+        dlopen("/System/Library/PreferenceBundles/VPNPreferences.bundle/VPNPreferences", RTLD_LAZY);
+        @try {
+            id controller = [[NSClassFromString(@"VPNController") alloc] init];
+            SEL specs = NSSelectorFromString(@"specifiers");
+            NSArray *specifiers = [controller respondsToSelector:specs]
+                ? ((id (*)(id, SEL))objc_msgSend)(controller, specs) : nil;
+            id target = nil;
+            for (id specifier in specifiers) {
+                SEL cellType = NSSelectorFromString(@"cellType");
+                if ([specifier respondsToSelector:cellType] &&
+                    ((NSInteger (*)(id, SEL))objc_msgSend)(specifier, cellType) == 1) {
+                    target = specifier;
+                    break;
+                }
+            }
+            if (!target) { [self showCenterMessage:@"未找到已配置的 VPN。"]; return; }
+            NSArray *getters = @[@"getPersonalConnectionStateForSpecifier:", @"getEnterpriseConnectionStateForSpecifier:"];
+            NSArray *setters = @[@"setPersonalVPNActive:specifier:", @"setEnterpriseVPNActive:specifier:"];
+            BOOL active = NO;
+            for (NSString *name in getters) {
+                SEL selector = NSSelectorFromString(name);
+                if ([controller respondsToSelector:selector]) {
+                    id value = ((id (*)(id, SEL, id))objc_msgSend)(controller, selector, target);
+                    active |= [value respondsToSelector:@selector(boolValue)] && [value boolValue];
+                }
+            }
+            BOOL supported = NO;
+            for (NSString *name in setters) {
+                SEL selector = NSSelectorFromString(name);
+                if ([controller respondsToSelector:selector]) {
+                    ((void (*)(id, SEL, BOOL, id))objc_msgSend)(controller, selector, !active, target);
+                    supported = YES;
+                }
+            }
+            [self showCenterMessage:supported ? @"已发送 VPN 切换请求。" : @"当前系统不支持此 VPN 操作。"];
+        } @catch (__unused NSException *exception) {
+            [self showCenterMessage:@"无法切换 VPN，请检查系统 VPN 配置。"];
+        }
+        return;
+    }
+    NSString *bundle = [hostSession.activeBundleId copy] ?: [pinnedBundleId copy];
+    if (bundle.length == 0) { [self showCenterMessage:@"当前没有窗口应用。"]; return; }
+    [self dismissAppSearch];
+    [self forceCloseAndReleaseImmediately];
+    // Recreate the hosted scene without terminating unrelated or media processes.
+    [hostSession invalidate];
+    [self pinAppWithBundleId:bundle];
 }
 
 -(void)viewSafeAreaInsetsDidChange{
@@ -2729,7 +2868,9 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     CGFloat widthScale = availableCardWidth / MAX(1, logicalCanvas.width);
     CGFloat heightScale = availableCardHeight / MAX(1, logicalCanvas.height);
     scale = MIN(1.0, MIN(widthScale, heightScale));
-    scale *= MIN(MAX([[POApplicationHelper settings][@"windowSize"] doubleValue] / 100.0, 0.4), 1.0);
+    if (![[POApplicationHelper settings][@"windowSizeMode"] isEqualToString:@"16:9"]) {
+        scale *= MIN(MAX([[POApplicationHelper settings][@"windowSize"] doubleValue] / 100.0, 0.4), 1.0);
+    }
 
     CGFloat screenScale = UIScreen.mainScreen.scale;
     contentLayoutWidth = round(logicalCanvas.width * scale * screenScale) / screenScale;
@@ -2953,6 +3094,9 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     CGRect bounds = self.view.bounds;
     CGFloat shortSide = MIN(CGRectGetWidth(bounds), CGRectGetHeight(bounds));
     CGFloat longSide = MAX(CGRectGetWidth(bounds), CGRectGetHeight(bounds));
+    if ([[POApplicationHelper settings][@"windowSizeMode"] isEqualToString:@"16:9"]) {
+        longSide = shortSide * 16.0 / 9.0;
+    }
     UIInterfaceOrientation orientation = [self contextManagerPreferredHostedInterfaceOrientation:manager];
     return UIInterfaceOrientationIsLandscape(orientation)
         ? CGSizeMake(longSide, shortSide)
@@ -3087,7 +3231,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 }
 
 -(void)avoidClosedHandleForKeyboardWillShow:(NSNotification *)notification{
-    if ([self isHorizontalQuickSwitchLayoutMode] ||
+    if (appSearchNavigation || handleSearchDragActive || [self isHorizontalQuickSwitchLayoutMode] ||
         ![[POApplicationHelper settings][@"keyboardAvoiding"] boolValue] || [self isPanelActive]) {
         return;
     }
@@ -3210,8 +3354,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 
     [hostSession prepareBundleId:bundleId];
     NSUInteger openGeneration = ++deferredOpenGeneration;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
+    dispatch_async(dispatch_get_main_queue(), ^{
         if (openGeneration == self->deferredOpenGeneration &&
             self->panelState == POPanelStateClosed &&
             [self->pinnedBundleId isEqualToString:bundleId]) {
@@ -4106,6 +4249,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 }
 
 -(void)scrollViewDidScroll:(UIScrollView *)sv{
+    [self layoutAdditionalControls];
     if (sv == scrollView) {
         [self updatePortraitHostedLandscapeHandleForCurrentOffset];
         [self updateInteractionBackdropsAnimated:NO];

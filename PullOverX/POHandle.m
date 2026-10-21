@@ -56,7 +56,7 @@
 -(CGFloat)handleOpacity{
     id configuredValue = [POApplicationHelper settings][@"handleOpacity"];
     CGFloat opacity = configuredValue ? [configuredValue doubleValue] / 100.0 : 1.0;
-    return MIN(MAX(opacity, 0.1), 1.0);
+    return MIN(MAX(opacity, 0.0), 1.0);
 }
 
 -(void)applyHandleOpacity{
