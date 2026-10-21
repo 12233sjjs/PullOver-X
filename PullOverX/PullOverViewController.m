@@ -258,11 +258,20 @@ static NSArray<NSDictionary *> *POCenterActions(void) {
 }
 
 static NSInteger POCenterActionForSlot(NSInteger slot) {
-    if (slot < 0 || slot > 3) return NSNotFound;
-    NSArray *keys = @[@"centerActionTop", @"centerActionRight", @"centerActionBottom", @"centerActionLeft"];
+    if (slot < 0 || slot > 7) return NSNotFound;
+    NSArray *keys = @[@"centerActionTop", @"centerActionTopRight", @"centerActionRight",
+        @"centerActionBottomRight", @"centerActionBottom", @"centerActionBottomLeft",
+        @"centerActionLeft", @"centerActionTopLeft"];
+    NSArray *defaults = @[@0, @4, @1, @5, @2, @6, @3, @7];
     id value = [POApplicationHelper settings][keys[slot]];
-    NSInteger action = [value respondsToSelector:@selector(integerValue)] ? [value integerValue] : slot;
-    return action >= 0 && action < (NSInteger)POCenterActions().count ? action : slot;
+    NSInteger fallback = [defaults[slot] integerValue];
+    NSInteger action = [value respondsToSelector:@selector(integerValue)] ? [value integerValue] : fallback;
+    return action >= 0 && action < (NSInteger)POCenterActions().count ? action : fallback;
+}
+
+static CGFloat POCenterWheelDiameter(UIView *view) {
+    CGRect area = UIEdgeInsetsInsetRect(view.bounds, view.safeAreaInsets);
+    return MAX(1, MIN(304, MIN(CGRectGetWidth(area) - 24, CGRectGetHeight(area) - 24)));
 }
 
 static id POCenterSharedController(NSString *name, NSString *accessor) {
@@ -305,7 +314,7 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     self.wheel.backgroundColor = UIColor.clearColor;
     [self.view addSubview:self.wheel];
     NSMutableArray *buttons = [NSMutableArray array];
-    for (NSInteger index = 0; index < 4; index++) {
+    for (NSInteger index = 0; index < 8; index++) {
         UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
         button.tag = index;
         [button addTarget:self action:@selector(selectAction:) forControlEvents:UIControlEventTouchUpInside];
@@ -361,14 +370,13 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
     CGRect area = UIEdgeInsetsInsetRect(self.view.bounds, self.view.safeAreaInsets);
-    CGFloat diameter = MIN(240, MIN(CGRectGetWidth(area) - 24, CGRectGetHeight(area) - 24));
-    diameter = MAX(1, diameter);
+    CGFloat diameter = POCenterWheelDiameter(self.view);
     self.wheel.bounds = CGRectMake(0, 0, diameter, diameter);
     self.wheel.center = CGPointMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds));
     self.wheel.layer.cornerRadius = diameter / 2;
-    CGFloat radius = (diameter - 64) / 2 - 4;
+    CGFloat radius = MAX(0, diameter / 2 - 46);
     for (NSInteger index = 0; index < self.buttons.count; index++) {
-        CGFloat angle = -M_PI_2 + index * M_PI_2;
+        CGFloat angle = -M_PI_2 + index * M_PI_4;
         UIButton *button = self.buttons[index];
         button.bounds = CGRectMake(0, 0, 64, 64);
         button.center = CGPointMake(diameter / 2 + cos(angle) * radius,
@@ -696,7 +704,7 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     [self.view addSubview:oppositeHandle];
     handleCenterMenu = [[POCenterMenuController alloc] init];
     POCenterMenuController *targetPreview = handleCenterMenu;
-    targetPreview.view.frame = CGRectMake(0, 0, 264, 264);
+    targetPreview.view.frame = CGRectMake(0, 0, 328, 328);
     [targetPreview.view setNeedsLayout];
     [targetPreview.view layoutIfNeeded];
     appSearchTarget = targetPreview.wheel;
@@ -842,7 +850,13 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     }
     oppositeHandle.frame = CGRectMake(oppositeX, oppositeY - size / 2, size, size);
     oppositeHandle.imageView.image = self.handle.imageView.image;
-    appSearchTarget.bounds = CGRectMake(0, 0, 240, 240);
+    CGFloat wheelDiameter = POCenterWheelDiameter(self.view);
+    CGSize previewSize = CGSizeMake(wheelDiameter + 24, wheelDiameter + 24);
+    if (!CGSizeEqualToSize(handleCenterMenu.view.bounds.size, previewSize)) {
+        handleCenterMenu.view.bounds = (CGRect){CGPointZero, previewSize};
+        [handleCenterMenu.view setNeedsLayout];
+        [handleCenterMenu.view layoutIfNeeded];
+    }
     appSearchTarget.center = CGPointMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds));
     if (appSearchNavigation) {
         appSearchNavigation.view.bounds = self.view.bounds;
@@ -3990,14 +4004,18 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     NSInteger selectedAction = NSNotFound;
     if (insideSearchTarget &&
         !CGRectContainsPoint(CGRectInset(handleCenterMenu.cancelButton.frame, -8, -8), wheelPoint)) {
+        CGFloat nearestDistance = CGFLOAT_MAX;
         for (UIButton *button in handleCenterMenu.buttons) {
-            BOOL selected = CGRectContainsPoint(CGRectInset(button.frame, -8, -8), wheelPoint);
-            button.alpha = selected ? 0.55 : 1.0;
-            if (selected) selectedAction = button.tag;
+            CGFloat distance = hypot(wheelPoint.x - button.center.x, wheelPoint.y - button.center.y);
+            if (CGRectContainsPoint(CGRectInset(button.frame, -8, -8), wheelPoint) &&
+                distance < nearestDistance) {
+                nearestDistance = distance;
+                selectedAction = button.tag;
+            }
         }
-    } else {
-        for (UIButton *button in handleCenterMenu.buttons) button.alpha = 1.0;
     }
+    for (UIButton *button in handleCenterMenu.buttons)
+        button.alpha = button.tag == selectedAction ? 0.55 : 1.0;
     if (handleSearchDragActive && recognizer.state == UIGestureRecognizerStateEnded && insideSearchTarget) {
         handleSearchDragActive = NO;
         appSearchTarget.hidden = YES;
