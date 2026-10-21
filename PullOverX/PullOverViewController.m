@@ -961,11 +961,6 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     return YES;
 }
 
--(BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
-    shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)other{
-    return gestureRecognizer == windowDoubleTapGestureRecognizer || other == windowDoubleTapGestureRecognizer;
-}
-
 -(void)windowDidDoubleTap:(UITapGestureRecognizer *)recognizer{
     if (recognizer.state == UIGestureRecognizerStateRecognized) {
         [self handle:self.handle didReceiveDoubleTap:recognizer];
@@ -2662,7 +2657,8 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
     shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
-    return NO;
+    return gestureRecognizer == windowDoubleTapGestureRecognizer ||
+        otherGestureRecognizer == windowDoubleTapGestureRecognizer;
 }
 
 -(BOOL)canUseDirectScaledProgrammaticCloseAnimation{
