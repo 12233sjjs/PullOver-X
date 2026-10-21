@@ -678,6 +678,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 }
 
 -(void)layoutAdditionalControls{
+    if (!oppositeHandle || !self.handle || CGRectIsEmpty(self.view.bounds)) return;
     CGFloat size = CGRectGetWidth(oppositeHandle.bounds);
     CGPoint primaryCenter = [self.handle.superview convertPoint:self.handle.center toView:self.view];
     CGFloat minimumY = self.view.safeAreaInsets.top + size / 2 + HANDLE_EDGE_GAP;
@@ -688,6 +689,11 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     oppositeHandle.restingOriginX = oppositeX;
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     NSNumber *primaryRatio = [defaults objectForKey:@"primaryHandleVerticalRatio"];
+    if (!primaryRatio && !CGSizeEqualToSize(lastLaidOutSize, CGSizeZero)) {
+        primaryRatio = @((MIN(MAX(primaryCenter.y, minimumY), maximumY) - minimumY) /
+            MAX(1, maximumY - minimumY));
+        [defaults setObject:primaryRatio forKey:@"primaryHandleVerticalRatio"];
+    }
     if (primaryRatio) {
         primaryCenter.y = minimumY + MIN(MAX(primaryRatio.doubleValue, 0), 1) * (maximumY - minimumY);
         CGPoint localCenter = [self.view convertPoint:primaryCenter toView:self.handle.superview];
@@ -707,6 +713,10 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         oppositeY = above >= minimumY && (below > maximumY || oppositeY <= primaryCenter.y) ? above : below;
     }
     oppositeY = MIN(MAX(oppositeY, minimumY), maximumY);
+    if (!oppositeRatio && !CGSizeEqualToSize(lastLaidOutSize, CGSizeZero)) {
+        [defaults setDouble:(oppositeY - minimumY) / MAX(1, maximumY - minimumY)
+                     forKey:@"oppositeHandleVerticalRatio"];
+    }
     oppositeHandle.frame = CGRectMake(oppositeX, oppositeY - size / 2, size, size);
     oppositeHandle.imageView.image = self.handle.imageView.image;
     appSearchTarget.bounds = CGRectMake(0, 0, 64, 64);
