@@ -240,7 +240,7 @@ NSArray<NSArray<POQuickSwitchEntry *> *> *POQuickSwitchBuildPages(
         self.estimatedSectionFooterHeight = 0;
         self.separatorStyle = UITableViewCellSeparatorStyleNone;
         self.layer.shadowColor = [UIColor blackColor].CGColor;
-        self.layer.shadowOpacity = 0.30;
+        self.layer.shadowOpacity = 0;
         self.layer.shadowRadius = 3.5;
         self.layer.shadowOffset = CGSizeZero;
         self.separatorColor = [UIColor clearColor];
@@ -248,8 +248,7 @@ NSArray<NSArray<POQuickSwitchEntry *> *> *POQuickSwitchBuildPages(
         self.delegate = self;
         self.dataSource = self;
 
-        UIBlurEffect *menuBlur = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterial];
-        UIVisualEffectView *menuBackground = [[UIVisualEffectView alloc] initWithEffect:menuBlur];
+        UIVisualEffectView *menuBackground = [[UIVisualEffectView alloc] initWithEffect:nil];
         menuBackground.layer.masksToBounds = YES;
         menuBackground.layer.cornerRadius = QS_CORNER_RADIUS;
         menuBackground.layer.cornerCurve = kCACornerCurveContinuous;

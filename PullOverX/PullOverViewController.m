@@ -3772,7 +3772,8 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 
 -(void)handle:(POHandle *)handle didLongPress:(UILongPressGestureRecognizer *)recognizer{
     if (recognizer.state == UIGestureRecognizerStateBegan) {
-        handleSearchDragActive = [self canBeginQuickSwitchSession];
+        handleSearchDragActive = [self canBeginQuickSwitchSession] &&
+            !(handle == self.handle && panelState != POPanelStateClosed);
         [self layoutAdditionalControls];
         appSearchTarget.hidden = !handleSearchDragActive;
         [self.view bringSubviewToFront:appSearchTarget];
@@ -4138,7 +4139,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     [self hideMirrorZone];
     if (shouldOpenApp) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self showAppSearch];
+            [self pinAppWithBundleId:app.bundleIdentifier];
         });
     }
 }

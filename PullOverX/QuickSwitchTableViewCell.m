@@ -12,8 +12,7 @@
 
 -(instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier{
     if (self = [super initWithStyle:style reuseIdentifier:reuseIdentifier]) {
-        UIBlurEffect *tileBlur = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterial];
-        UIVisualEffectView *tile = [[UIVisualEffectView alloc] initWithEffect:tileBlur];
+        UIVisualEffectView *tile = [[UIVisualEffectView alloc] initWithEffect:nil];
         tile.translatesAutoresizingMaskIntoConstraints = NO;
         tile.layer.cornerRadius = POQuickSwitchSelectionTileCornerRadius;
         tile.layer.cornerCurve = kCACornerCurveContinuous;
