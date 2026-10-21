@@ -216,7 +216,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     [outside addTarget:self action:@selector(cancelMenu) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:outside];
     self.wheel = [[POCenterWheelView alloc] init];
-    self.wheel.backgroundColor = [UIColor.secondarySystemBackgroundColor colorWithAlphaComponent:0.72];
+    self.wheel.backgroundColor = UIColor.clearColor;
     [self.view addSubview:self.wheel];
     NSArray *titles = @[@"搜索应用", @"结束播放应用", @"切换 VPN", @"重载窗口"];
     NSArray *labels = @[@"搜索应用，在窗口中打开", @"强制关闭正在播放的应用", @"切换 VPN，连接或断开", @"重新加载当前窗口应用"];
@@ -247,7 +247,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     self.cancelButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [self.cancelButton setImage:[UIImage systemImageNamed:@"xmark"] forState:UIControlStateNormal];
     self.cancelButton.accessibilityLabel = @"取消";
-    self.cancelButton.backgroundColor = [UIColor.tertiarySystemBackgroundColor colorWithAlphaComponent:0.65];
+    self.cancelButton.backgroundColor = UIColor.clearColor;
     self.cancelButton.layer.cornerRadius = 24;
     [self.cancelButton addTarget:self action:@selector(cancelMenu) forControlEvents:UIControlEventTouchUpInside];
     [self.wheel addSubview:self.cancelButton];
@@ -294,6 +294,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 @interface PullOverViewController ()<POHostSessionControllerDelegate, UIGestureRecognizerDelegate>{
     POHandle *oppositeHandle;
     UIView *appSearchTarget;
+    POCenterMenuController *handleCenterMenu;
     UIImageView *handleSearchPreview;
     UINavigationController *appSearchNavigation;
     __weak UIWindow *keyWindowBeforeSearch;
@@ -598,7 +599,8 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     self.handle.allowsVerticalMovement = YES;
     oppositeHandle.layoutMode = POHandleLayoutModeLandscapeFixedBottomLeft;
     [self.view addSubview:oppositeHandle];
-    POCenterMenuController *targetPreview = [[POCenterMenuController alloc] init];
+    handleCenterMenu = [[POCenterMenuController alloc] init];
+    POCenterMenuController *targetPreview = handleCenterMenu;
     targetPreview.view.frame = CGRectMake(0, 0, 264, 264);
     [targetPreview.view setNeedsLayout];
     [targetPreview.view layoutIfNeeded];
@@ -631,6 +633,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     self.handle.imageView.transform = contentTransform;
     oppositeHandle.imageView.transform = contentTransform;
     appSearchNavigation.view.transform = contentTransform;
+    appSearchTarget.transform = contentTransform;
     [oppositeHandle refreshHandleSizeAnimated:NO];
     [self.quickSwitchTableView refreshLayoutDirection];
     [quickSwitchHorizontalBarView refreshLayoutDirection];
@@ -3784,6 +3787,18 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     }
     BOOL insideSearchTarget = hypot(searchPoint.x - appSearchTarget.center.x,
                                    searchPoint.y - appSearchTarget.center.y) <= CGRectGetWidth(appSearchTarget.bounds) / 2;
+    CGPoint wheelPoint = [appSearchTarget convertPoint:searchPoint fromView:self.view];
+    NSInteger selectedAction = NSNotFound;
+    if (insideSearchTarget &&
+        !CGRectContainsPoint(CGRectInset(handleCenterMenu.cancelButton.frame, -8, -8), wheelPoint)) {
+        for (UIButton *button in handleCenterMenu.buttons) {
+            BOOL selected = CGRectContainsPoint(CGRectInset(button.frame, -8, -8), wheelPoint);
+            button.alpha = selected ? 0.55 : 1.0;
+            if (selected) selectedAction = button.tag;
+        }
+    } else {
+        for (UIButton *button in handleCenterMenu.buttons) button.alpha = 1.0;
+    }
     if (handleSearchDragActive && recognizer.state == UIGestureRecognizerStateEnded && insideSearchTarget) {
         handleSearchDragActive = NO;
         appSearchTarget.hidden = YES;
@@ -3791,7 +3806,12 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         [self dismissPresentedQuickSwitchMenuImmediately];
         [quickSwitchDragCoordinator cancelAnimated:NO];
         [self hideMirrorZone];
-        [self showAppSearch];
+        if (selectedAction != NSNotFound) {
+            [self showAppSearch];
+            if (appSearchNavigation) [self performCenterAction:selectedAction];
+        } else {
+            [self resetAutoNubTimer];
+        }
         return;
     }
     if (recognizer.state == UIGestureRecognizerStateEnded ||
