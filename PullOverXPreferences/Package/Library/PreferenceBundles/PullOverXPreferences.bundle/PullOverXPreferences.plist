@@ -198,7 +198,7 @@
 			<key>cellClass</key>
 			<string>POValueSliderTableCell</string>
 			<key>default</key>
-			<integer>67</integer>
+			<integer>70</integer>
 			<key>key</key>
 			<string>nubHiddenPercentage</string>
 			<key>label</key>
@@ -212,9 +212,9 @@
 			<key>minimumValue</key>
 			<integer>0</integer>
 			<key>maximumValue</key>
-			<integer>80</integer>
+			<integer>100</integer>
 			<key>increment</key>
-			<integer>1</integer>
+			<integer>10</integer>
 			<key>unit</key>
 			<string>%</string>
 		</dict>
@@ -305,12 +305,68 @@
 			<string>%</string>
 		</dict>
 		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>isStaticText</key>
-			<true/>
-			<key>label</key>
-			<string>Behavior</string>
+			<key>cell</key><string>PSGroupCell</string>
+			<key>label</key><string>中央轮盘</string>
+		</dict>
+		<dict>
+			<key>cell</key><string>PSLinkListCell</string>
+			<key>detail</key><string>PSListItemsController</string>
+			<key>label</key><string>上方操作</string>
+			<key>key</key><string>centerActionTop</string>
+			<key>default</key><integer>0</integer>
+			<key>defaults</key><string>com.mlgm.pulloverx</string>
+			<key>get</key><string>getValueForSpecifier:</string>
+			<key>set</key><string>setValue:forSpecifier:</string>
+			<key>validValues</key>
+			<array><integer>0</integer><integer>1</integer><integer>2</integer><integer>3</integer><integer>4</integer><integer>5</integer><integer>6</integer><integer>7</integer><integer>8</integer></array>
+			<key>validTitles</key>
+			<array><string>搜索应用</string><string>结束播放应用</string><string>切换 VPN</string><string>重载窗口</string><string>通知中心</string><string>切换 Wi-Fi</string><string>蜂窝数据</string><string>手电筒</string><string>注销 SpringBoard</string></array>
+		</dict>
+		<dict>
+			<key>cell</key><string>PSLinkListCell</string>
+			<key>detail</key><string>PSListItemsController</string>
+			<key>label</key><string>右方操作</string>
+			<key>key</key><string>centerActionRight</string>
+			<key>default</key><integer>1</integer>
+			<key>defaults</key><string>com.mlgm.pulloverx</string>
+			<key>get</key><string>getValueForSpecifier:</string>
+			<key>set</key><string>setValue:forSpecifier:</string>
+			<key>validValues</key>
+			<array><integer>0</integer><integer>1</integer><integer>2</integer><integer>3</integer><integer>4</integer><integer>5</integer><integer>6</integer><integer>7</integer><integer>8</integer></array>
+			<key>validTitles</key>
+			<array><string>搜索应用</string><string>结束播放应用</string><string>切换 VPN</string><string>重载窗口</string><string>通知中心</string><string>切换 Wi-Fi</string><string>蜂窝数据</string><string>手电筒</string><string>注销 SpringBoard</string></array>
+		</dict>
+		<dict>
+			<key>cell</key><string>PSLinkListCell</string>
+			<key>detail</key><string>PSListItemsController</string>
+			<key>label</key><string>下方操作</string>
+			<key>key</key><string>centerActionBottom</string>
+			<key>default</key><integer>2</integer>
+			<key>defaults</key><string>com.mlgm.pulloverx</string>
+			<key>get</key><string>getValueForSpecifier:</string>
+			<key>set</key><string>setValue:forSpecifier:</string>
+			<key>validValues</key>
+			<array><integer>0</integer><integer>1</integer><integer>2</integer><integer>3</integer><integer>4</integer><integer>5</integer><integer>6</integer><integer>7</integer><integer>8</integer></array>
+			<key>validTitles</key>
+			<array><string>搜索应用</string><string>结束播放应用</string><string>切换 VPN</string><string>重载窗口</string><string>通知中心</string><string>切换 Wi-Fi</string><string>蜂窝数据</string><string>手电筒</string><string>注销 SpringBoard</string></array>
+		</dict>
+		<dict>
+			<key>cell</key><string>PSLinkListCell</string>
+			<key>detail</key><string>PSListItemsController</string>
+			<key>label</key><string>左方操作</string>
+			<key>key</key><string>centerActionLeft</string>
+			<key>default</key><integer>3</integer>
+			<key>defaults</key><string>com.mlgm.pulloverx</string>
+			<key>get</key><string>getValueForSpecifier:</string>
+			<key>set</key><string>setValue:forSpecifier:</string>
+			<key>validValues</key>
+			<array><integer>0</integer><integer>1</integer><integer>2</integer><integer>3</integer><integer>4</integer><integer>5</integer><integer>6</integer><integer>7</integer><integer>8</integer></array>
+			<key>validTitles</key>
+			<array><string>搜索应用</string><string>结束播放应用</string><string>切换 VPN</string><string>重载窗口</string><string>通知中心</string><string>切换 Wi-Fi</string><string>蜂窝数据</string><string>手电筒</string><string>注销 SpringBoard</string></array>
+		</dict>
+		<dict>
+			<key>cell</key><string>PSGroupCell</string>
+			<key>label</key><string>Behavior</string>
 			<key>footerText</key>
 			<string>Apps opened from another app use the floating window. Double tap the current window to open fullscreen and close the floating window.</string>
 		</dict>

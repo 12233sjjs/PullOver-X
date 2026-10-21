@@ -14,8 +14,8 @@
 #define PO_HANDLE_DEFAULT_SIZE 34.0
 #define PO_HANDLE_MINIMUM_SIZE 34.0
 #define PO_HANDLE_MAXIMUM_SIZE 50.0
-#define PO_HANDLE_DEFAULT_NUB_HIDDEN_PERCENTAGE 67.0
-#define PO_HANDLE_MAXIMUM_NUB_HIDDEN_PERCENTAGE 80.0
+#define PO_HANDLE_DEFAULT_NUB_HIDDEN_PERCENTAGE 70.0
+#define PO_HANDLE_MAXIMUM_NUB_HIDDEN_PERCENTAGE 100.0
 #define PO_HANDLE_MINIMUM_TOUCH_SIZE 52.0
 
 @interface POHandle () <UIGestureRecognizerDelegate> {
@@ -47,10 +47,10 @@
 -(CGFloat)nubHiddenPercentage{
     id configuredValue = [POApplicationHelper settings][@"nubHiddenPercentage"];
     CGFloat percentage = configuredValue ? [configuredValue doubleValue] : PO_HANDLE_DEFAULT_NUB_HIDDEN_PERCENTAGE;
-    if (percentage < 0) {
+    if (!isfinite(percentage) || percentage < 0) {
         percentage = PO_HANDLE_DEFAULT_NUB_HIDDEN_PERCENTAGE;
     }
-    return MIN(MAX(percentage, 0), PO_HANDLE_MAXIMUM_NUB_HIDDEN_PERCENTAGE);
+    return MIN(MAX(round(percentage / 10.0) * 10.0, 0), PO_HANDLE_MAXIMUM_NUB_HIDDEN_PERCENTAGE);
 }
 
 -(CGFloat)handleOpacity{
@@ -194,7 +194,9 @@
         }
     };
     if (animated) {
-        [UIView animateWithDuration:0.3 animations:changes];
+        [UIView animateWithDuration:0.2 delay:0
+                            options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction
+                         animations:changes completion:nil];
     } else {
         changes();
     }

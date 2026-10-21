@@ -33,7 +33,7 @@ static CGFloat POContentCornerRadius(void) {
 #define PO_KEYBOARD_ZOOM_MINIMUM_USEFUL_SCALE 1.12
 #define PO_CARD_SCALE_EPSILON 0.001
 #define PO_HANDLE_CARD_SCALE_ANIMATION_DURATION 0.25
-#define PO_SCALED_PROGRAMMATIC_CLOSE_DURATION 0.28
+#define PO_SCALED_PROGRAMMATIC_CLOSE_DURATION 0.22
 #define PO_SCALED_CLOSE_POST_COMMIT_CLEANUP_DELAY 0.035
 #define PO_HANDLE_GUARD_MINIMUM_REVEAL_DURATION 2.0
 
@@ -238,6 +238,40 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 }
 @end
 
+static NSArray<NSDictionary *> *POCenterActions(void) {
+    static NSArray *actions;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        actions = @[
+            @{@"title":@"搜索应用", @"icon":@"magnifyingglass"},
+            @{@"title":@"结束播放应用", @"icon":@"speaker.slash"},
+            @{@"title":@"切换 VPN", @"icon":@"network"},
+            @{@"title":@"重载窗口", @"icon":@"arrow.clockwise"},
+            @{@"title":@"通知中心", @"icon":@"bell"},
+            @{@"title":@"切换 Wi-Fi", @"icon":@"wifi"},
+            @{@"title":@"蜂窝数据", @"icon":@"antenna.radiowaves.left.and.right"},
+            @{@"title":@"手电筒", @"icon":@"flashlight.on.fill"},
+            @{@"title":@"注销", @"icon":@"arrow.triangle.2.circlepath"},
+        ];
+    });
+    return actions;
+}
+
+static NSInteger POCenterActionForSlot(NSInteger slot) {
+    if (slot < 0 || slot > 3) return NSNotFound;
+    NSArray *keys = @[@"centerActionTop", @"centerActionRight", @"centerActionBottom", @"centerActionLeft"];
+    id value = [POApplicationHelper settings][keys[slot]];
+    NSInteger action = [value respondsToSelector:@selector(integerValue)] ? [value integerValue] : slot;
+    return action >= 0 && action < (NSInteger)POCenterActions().count ? action : slot;
+}
+
+static id POCenterSharedController(NSString *name, NSString *accessor) {
+    Class controllerClass = NSClassFromString(name);
+    SEL selector = NSSelectorFromString(accessor);
+    return [controllerClass respondsToSelector:selector]
+        ? ((id (*)(id, SEL))objc_msgSend)(controllerClass, selector) : nil;
+}
+
 @interface POCenterWheelView : UIView
 @end
 @implementation POCenterWheelView
@@ -255,6 +289,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 @property(nonatomic, strong) NSArray<UIButton *> *buttons;
 @property(nonatomic, strong) UIButton *cancelButton;
 @property(nonatomic, strong) UILabel *statusLabel;
+- (void)refreshActions;
 @end
 
 @implementation POCenterMenuController
@@ -269,22 +304,19 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     self.wheel = [[POCenterWheelView alloc] init];
     self.wheel.backgroundColor = UIColor.clearColor;
     [self.view addSubview:self.wheel];
-    NSArray *titles = @[@"搜索应用", @"结束播放应用", @"切换 VPN", @"重载窗口"];
-    NSArray *labels = @[@"搜索应用，在窗口中打开", @"强制关闭正在播放的应用", @"切换 VPN，连接或断开", @"重新加载当前窗口应用"];
-    NSArray *icons = @[@"magnifyingglass", @"speaker.slash", @"network", @"arrow.clockwise"];
     NSMutableArray *buttons = [NSMutableArray array];
     for (NSInteger index = 0; index < 4; index++) {
         UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
         button.tag = index;
-        button.accessibilityLabel = labels[index];
         [button addTarget:self action:@selector(selectAction:) forControlEvents:UIControlEventTouchUpInside];
-        UIImageView *icon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:icons[index]]];
+        UIImageView *icon = [[UIImageView alloc] init];
+        icon.tag = 1001;
         icon.frame = CGRectMake(20, 2, 24, 24);
         icon.contentMode = UIViewContentModeScaleAspectFit;
         icon.userInteractionEnabled = NO;
         [button addSubview:icon];
         UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(0, 30, 64, 32)];
-        label.text = titles[index];
+        label.tag = 1002;
         label.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
         label.textAlignment = NSTextAlignmentCenter;
         label.numberOfLines = 2;
@@ -295,6 +327,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         [buttons addObject:button];
     }
     self.buttons = buttons;
+    [self refreshActions];
     self.cancelButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [self.cancelButton setImage:[UIImage systemImageNamed:@"xmark"] forState:UIControlStateNormal];
     self.cancelButton.accessibilityLabel = @"取消";
@@ -313,7 +346,17 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 }
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
+    [self refreshActions];
     [self.navigationController setNavigationBarHidden:YES animated:animated];
+}
+- (void)refreshActions {
+    for (UIButton *button in self.buttons) {
+        NSDictionary *action = POCenterActions()[POCenterActionForSlot(button.tag)];
+        ((UIImageView *)[button viewWithTag:1001]).image = [UIImage systemImageNamed:action[@"icon"]];
+        ((UILabel *)[button viewWithTag:1002]).text = action[@"title"];
+        button.accessibilityLabel = action[@"title"];
+        button.alpha = 1;
+    }
 }
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
@@ -478,6 +521,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 -(void)dismissAppSearch;
 -(void)layoutAdditionalControls;
 -(void)performCenterAction:(NSInteger)action;
+-(void)performCenterSystemAction:(NSInteger)action;
 -(void)showCenterMessage:(NSString *)message;
 
 @end
@@ -685,6 +729,10 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     oppositeHandle.imageView.transform = contentTransform;
     appSearchNavigation.view.transform = contentTransform;
     appSearchTarget.transform = contentTransform;
+    [handleCenterMenu refreshActions];
+    if ([appSearchNavigation.topViewController isKindOfClass:POCenterMenuController.class]) {
+        [(POCenterMenuController *)appSearchNavigation.topViewController refreshActions];
+    }
     [oppositeHandle refreshHandleSizeAnimated:NO];
     [self.quickSwitchTableView refreshLayoutDirection];
     [quickSwitchHorizontalBarView refreshLayoutDirection];
@@ -803,6 +851,9 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 }
 
 -(void)dismissAppSearch{
+    handleSearchDragActive = NO;
+    appSearchTarget.hidden = YES;
+    handleSearchPreview.hidden = YES;
     if (!appSearchNavigation) return;
     [appSearchNavigation.view endEditing:YES];
     [appSearchNavigation willMoveToParentViewController:nil];
@@ -849,6 +900,18 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         ((POCenterMenuController *)controller).statusLabel.text = message;
     } else if ([controller isKindOfClass:UITableViewController.class]) {
         ((UITableViewController *)controller).tableView.tableFooterView = status;
+    } else {
+        status.bounds = CGRectMake(0, 0, MIN(280, CGRectGetWidth(self.view.bounds) - 24), 80);
+        status.center = CGPointMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds));
+        status.backgroundColor = UIColor.secondarySystemBackgroundColor;
+        status.layer.cornerRadius = 8;
+        status.clipsToBounds = YES;
+        status.transform = [[POApplicationHelper settings][@"leftHanded"] boolValue]
+            ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
+        status.userInteractionEnabled = NO;
+        [self.view addSubview:status];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{ [status removeFromSuperview]; });
     }
     UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, message);
 }
@@ -862,7 +925,9 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     return kill(pid, SIGKILL) == 0;
 }
 
--(void)performCenterAction:(NSInteger)action{
+-(void)performCenterAction:(NSInteger)slot{
+    NSInteger action = POCenterActionForSlot(slot);
+    if (action == NSNotFound) return;
     if (action == 0) {
         POAppSearchController *search = [[POAppSearchController alloc] initWithStyle:UITableViewStylePlain];
         __weak typeof(self) weakSelf = self;
@@ -871,10 +936,13 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
             [weakSelf dismissAppSearch];
             [weakSelf pinAppWithBundleId:bundle];
         };
-        [appSearchNavigation setNavigationBarHidden:NO animated:YES];
-        [appSearchNavigation pushViewController:search animated:YES];
+        appSearchTarget.hidden = YES;
+        handleSearchPreview.hidden = YES;
+        [appSearchNavigation setNavigationBarHidden:NO animated:NO];
+        [appSearchNavigation setViewControllers:@[search] animated:NO];
         return;
     }
+    [self dismissAppSearch];
     if (action == 1) {
         id controllerClass = NSClassFromString(@"SBMediaController");
         SEL shared = NSSelectorFromString(@"sharedInstance");
@@ -934,6 +1002,10 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         }
         return;
     }
+    if (action >= 4) {
+        [self performCenterSystemAction:action];
+        return;
+    }
     NSString *bundle = [hostSession.activeBundleId copy] ?: [pinnedBundleId copy];
     if (bundle.length == 0) { [self showCenterMessage:@"当前没有窗口应用。"]; return; }
     [self dismissAppSearch];
@@ -941,6 +1013,76 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     // Recreate the hosted scene without terminating unrelated or media processes.
     [hostSession invalidate];
     [self pinAppWithBundleId:bundle];
+}
+
+-(void)performCenterSystemAction:(NSInteger)action{
+    @try {
+        if (action == 4) {
+            id controller = POCenterSharedController(@"SBCoverSheetPresentationManager", @"sharedInstance");
+            SEL present = NSSelectorFromString(@"setCoverSheetPresented:animated:withCompletion:");
+            if ([controller respondsToSelector:present]) {
+                ((void (*)(id, SEL, BOOL, BOOL, id))objc_msgSend)(controller, present, YES, YES, nil);
+                return;
+            }
+            controller = POCenterSharedController(@"SBNotificationCenterController", @"sharedInstance");
+            present = NSSelectorFromString(@"presentAnimated:completion:");
+            if ([controller respondsToSelector:present]) {
+                ((void (*)(id, SEL, BOOL, id))objc_msgSend)(controller, present, YES, nil);
+                return;
+            }
+        } else if (action == 5) {
+            id controller = POCenterSharedController(@"SBWiFiManager", @"sharedInstance");
+            SEL get = NSSelectorFromString(@"wiFiEnabled");
+            SEL set = NSSelectorFromString(@"setWiFiEnabled:");
+            if ([controller respondsToSelector:get] && [controller respondsToSelector:set]) {
+                BOOL enabled = ((BOOL (*)(id, SEL))objc_msgSend)(controller, get);
+                ((void (*)(id, SEL, BOOL))objc_msgSend)(controller, set, !enabled);
+                return;
+            }
+        } else if (action == 6) {
+            void *telephony = dlopen("/System/Library/Frameworks/CoreTelephony.framework/CoreTelephony", RTLD_LAZY);
+            Boolean (*getEnabled)(void) = telephony ? dlsym(telephony, "CTCellularDataPlanGetIsEnabled") : NULL;
+            void (*setEnabled)(Boolean) = telephony ? dlsym(telephony, "CTCellularDataPlanSetIsEnabled") : NULL;
+            if (getEnabled && setEnabled) {
+                setEnabled(!getEnabled());
+                dlclose(telephony);
+                return;
+            }
+            if (telephony) dlclose(telephony);
+        } else if (action == 7) {
+            id controller = POCenterSharedController(@"SBUIFlashlightController", @"sharedInstance");
+            SEL get = NSSelectorFromString(@"level");
+            SEL set = NSSelectorFromString(@"setLevel:");
+            SEL available = NSSelectorFromString(@"isAvailable");
+            if ([controller respondsToSelector:available] &&
+                !((BOOL (*)(id, SEL))objc_msgSend)(controller, available)) {
+                [self showCenterMessage:@"手电筒当前不可用。"];
+                return;
+            }
+            if ([controller respondsToSelector:get] && [controller respondsToSelector:set]) {
+                unsigned long long level = ((unsigned long long (*)(id, SEL))objc_msgSend)(controller, get);
+                ((void (*)(id, SEL, unsigned long long))objc_msgSend)(controller, set, level ? 0 : 1);
+                return;
+            }
+        } else if (action == 8) {
+            Class actionClass = NSClassFromString(@"SBSRelaunchAction");
+            SEL create = NSSelectorFromString(@"actionWithReason:options:targetURL:");
+            id service = POCenterSharedController(@"FBSSystemService", @"sharedService");
+            SEL send = NSSelectorFromString(@"sendActions:withResult:");
+            if ([actionClass respondsToSelector:create] && [service respondsToSelector:send]) {
+                id request = ((id (*)(id, SEL, id, NSUInteger, id))objc_msgSend)(
+                    actionClass, create, @"PullOverX", (1 << 0) | (1 << 2), nil);
+                if (request) {
+                    [self forceCloseAndReleaseImmediately];
+                    ((void (*)(id, SEL, id, id))objc_msgSend)(service, send, [NSSet setWithObject:request], nil);
+                    return;
+                }
+            }
+        }
+        [self showCenterMessage:@"当前系统不支持此操作。"];
+    } @catch (__unused NSException *exception) {
+        [self showCenterMessage:@"系统未能执行此操作。"];
+    }
 }
 
 -(void)viewSafeAreaInsetsDidChange{
@@ -3520,6 +3662,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         ![POApplicationHelper isUserFacingApplicationBundleId:bundleId]) {
         return;
     }
+    [self dismissAppSearch];
 
     BOOL hasVisibleLivePresentation = contextView && !contextView.hidden &&
         contextView.superview == self.contentView && presentationBundleId.length > 0;
@@ -3938,7 +4081,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 
 -(void)quickSwitchTableView:(UIView<POQuickSwitchMenuPresenting> *)quickSwitchTableView didHoverBundleId:(NSString *)bundleId{
     [self cancelQuickSwitchPrewarm];
-    if (panelState != POPanelStateOpen || bundleId.length == 0 ||
+    if ((panelState != POPanelStateOpen && panelState != POPanelStateClosed) || bundleId.length == 0 ||
         [bundleId isEqualToString:hostSession.activeBundleId] ||
         [[POApplicationHelper frontMostBundleId] isEqualToString:bundleId]) {
         return;
@@ -3947,11 +4090,12 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     quickSwitchPrewarmBundleId = [bundleId copy];
     UIView<POQuickSwitchMenuPresenting> *presentingMenu = quickSwitchTableView;
     NSUInteger generation = quickSwitchPrewarmGeneration;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.08 * NSEC_PER_SEC)),
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.04 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         if (generation != self->quickSwitchPrewarmGeneration ||
             ![self->quickSwitchPrewarmBundleId isEqualToString:bundleId] ||
-            self->panelState != POPanelStateOpen || presentingMenu.alpha < 0.01 || presentingMenu.hidden) {
+            (self->panelState != POPanelStateOpen && self->panelState != POPanelStateClosed) ||
+            presentingMenu.alpha < 0.01 || presentingMenu.hidden) {
             return;
         }
         [self->hostSession prewarmBundleId:bundleId];

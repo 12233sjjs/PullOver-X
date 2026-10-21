@@ -506,6 +506,10 @@ static NSString * const kPOEnabledPendingRespringKey = @"enabled-respring-pendin
     }
 
     id value = [[self userDefaultsForSuite:suiteName] objectForKey:key];
+    if ([key isEqualToString:@"nubHiddenPercentage"]) {
+        CGFloat percentage = [(value ?: properties[@"default"]) doubleValue];
+        return @(isfinite(percentage) ? MIN(MAX(round(percentage / 10) * 10, 0), 100) : 70);
+    }
     return value ?: properties[@"default"];
 }
 
