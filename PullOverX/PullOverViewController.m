@@ -102,7 +102,90 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     }
 }
 
+@interface POAppSearchController : UITableViewController <UISearchBarDelegate>
+@property(nonatomic, copy) void (^selection)(NSString *);
+@property(nonatomic, copy) void (^cancellation)(void);
+@property(nonatomic, strong) NSArray<NSDictionary *> *applications;
+@property(nonatomic, strong) NSArray<NSDictionary *> *matches;
+@end
+
+@implementation POAppSearchController
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.title = @"Search Apps";
+    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc]
+        initWithBarButtonSystemItem:UIBarButtonSystemItemCancel target:self action:@selector(cancelSearch)];
+    UISearchBar *search = [[UISearchBar alloc] initWithFrame:CGRectMake(0, 0, 320, 56)];
+    search.placeholder = @"App name or bundle ID";
+    search.delegate = self;
+    self.tableView.tableHeaderView = search;
+    self.tableView.keyboardDismissMode = UIScrollViewKeyboardDismissModeOnDrag;
+    NSMutableDictionary *apps = [NSMutableDictionary dictionary];
+    Class workspaceClass = NSClassFromString(@"LSApplicationWorkspace");
+    SEL shared = NSSelectorFromString(@"defaultWorkspace");
+    SEL all = NSSelectorFromString(@"allApplications");
+    if ([workspaceClass respondsToSelector:shared]) {
+        id workspace = ((id (*)(id, SEL))objc_msgSend)(workspaceClass, shared);
+        if ([workspace respondsToSelector:all]) {
+            @try {
+                for (id proxy in ((id (*)(id, SEL))objc_msgSend)(workspace, all)) {
+                    NSString *bundle = [proxy valueForKey:@"bundleIdentifier"];
+                    NSString *name = [proxy valueForKey:@"localizedName"];
+                    if ([bundle isKindOfClass:NSString.class] &&
+                        [POApplicationHelper isUserFacingApplicationBundleId:bundle]) {
+                        apps[bundle] = @{@"bundle":bundle,
+                            @"name":[name isKindOfClass:NSString.class] && name.length ? name : bundle};
+                    }
+                }
+            } @catch (__unused NSException *exception) {}
+        }
+    }
+    self.applications = [apps.allValues sortedArrayUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        return [a[@"name"] localizedCaseInsensitiveCompare:b[@"name"]];
+    }];
+    [self searchBar:search textDidChange:@""];
+}
+- (void)cancelSearch {
+    if (self.cancellation) self.cancellation();
+}
+- (void)searchBar:(UISearchBar *)searchBar textDidChange:(NSString *)text {
+    NSString *query = [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    self.matches = [self.applications filteredArrayUsingPredicate:
+        [NSPredicate predicateWithBlock:^BOOL(NSDictionary *app, NSDictionary *bindings) {
+            return query.length == 0 ||
+                [app[@"name"] rangeOfString:query options:NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch].location != NSNotFound ||
+                [app[@"bundle"] rangeOfString:query options:NSCaseInsensitiveSearch].location != NSNotFound;
+        }]];
+    UILabel *empty = [[UILabel alloc] init];
+    empty.textAlignment = NSTextAlignmentCenter;
+    empty.text = self.applications.count ? @"No matching apps" : @"No available apps";
+    self.tableView.backgroundView = self.matches.count ? nil : empty;
+    [self.tableView reloadData];
+}
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    return self.matches.count;
+}
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"app"];
+    if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"app"];
+    NSDictionary *app = self.matches[path.row];
+    cell.textLabel.text = app[@"name"];
+    cell.detailTextLabel.text = app[@"bundle"];
+    cell.imageView.image = [POApplicationHelper imageForBundleId:app[@"bundle"]];
+    return cell;
+}
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
+    if (self.selection) self.selection(self.matches[path.row][@"bundle"]);
+}
+@end
+
 @interface PullOverViewController ()<POHostSessionControllerDelegate, UIGestureRecognizerDelegate>{
+    POHandle *oppositeHandle;
+    UIImageView *appSearchTarget;
+    UIImageView *handleSearchPreview;
+    UINavigationController *appSearchNavigation;
+    __weak UIWindow *keyWindowBeforeSearch;
+    BOOL handleSearchDragActive;
     NSString *pinnedBundleId;
     UIView *contextView;
     UIView *externalSceneStack;
@@ -224,6 +307,9 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 -(void)refreshHandleIconIfNeeded;
 -(void)resetAutoNubTimerWithMinimumDelay:(NSTimeInterval)minimumDelay;
 -(void)openApplicationExternallyFromQuickSwitch:(NSString *)bundleId;
+-(void)showAppSearch;
+-(void)dismissAppSearch;
+-(void)layoutAdditionalControls;
 
 @end
 
@@ -381,6 +467,20 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     scaledProgrammaticCloseNeedsLayout = NO;
     deferScaledCloseSessionCleanup = NO;
 
+    oppositeHandle = [[POHandle alloc] initWithController:self];
+    oppositeHandle.delegate = self;
+    oppositeHandle.layoutMode = POHandleLayoutModeLandscapeFixedBottomLeft;
+    [self.view addSubview:oppositeHandle];
+    appSearchTarget = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"magnifyingglass.circle.fill"]];
+    appSearchTarget.tintColor = UIColor.systemGreenColor;
+    appSearchTarget.hidden = YES;
+    appSearchTarget.userInteractionEnabled = NO;
+    [self.view addSubview:appSearchTarget];
+    handleSearchPreview = [[UIImageView alloc] initWithFrame:CGRectMake(0, 0, 40, 40)];
+    handleSearchPreview.contentMode = UIViewContentModeScaleAspectFit;
+    handleSearchPreview.userInteractionEnabled = NO;
+    handleSearchPreview.hidden = YES;
+    [self.view addSubview:handleSearchPreview];
     [self applyCurrentSettings];
 }
 
@@ -398,6 +498,9 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         ? CGAffineTransformMakeScale(-1.0, 1.0)
         : CGAffineTransformIdentity;
     self.handle.imageView.transform = contentTransform;
+    oppositeHandle.imageView.transform = contentTransform;
+    appSearchNavigation.view.transform = contentTransform;
+    [oppositeHandle refreshHandleSizeAnimated:NO];
     [self.quickSwitchTableView refreshLayoutDirection];
     [quickSwitchHorizontalBarView refreshLayoutDirection];
     [quickSwitchDragCoordinator refreshLayoutDirection];
@@ -410,6 +513,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     [self.handle refreshHandleSizeAnimated:NO];
     [self applyLayoutPreservingHandlePosition:YES];
     [self.handle refreshNubbedPositionAnimated:NO];
+    [self layoutAdditionalControls];
     [self reevaluateKeyboardZoomAnimated:YES];
     if (self.view.window && self.view.window.userInteractionEnabled && self.view.alpha > 0.01) {
         [self resetAutoNubTimer];
@@ -459,6 +563,63 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         [self applyLayoutPreservingHandlePosition:YES];
     }
     [self reconcilePresentedContainerGeometry];
+    [self layoutAdditionalControls];
+}
+
+-(void)layoutAdditionalControls{
+    CGFloat size = CGRectGetWidth(oppositeHandle.bounds);
+    oppositeHandle.restingOriginX = HANDLE_EDGE_GAP;
+    CGPoint primaryCenter = [self.handle.superview convertPoint:self.handle.center toView:self.view];
+    CGFloat minimumY = self.view.safeAreaInsets.top + size / 2 + HANDLE_EDGE_GAP;
+    CGFloat maximumY = MAX(minimumY, CGRectGetHeight(self.view.bounds) -
+        self.view.safeAreaInsets.bottom - size / 2 - HANDLE_EDGE_GAP);
+    oppositeHandle.frame = CGRectMake(HANDLE_EDGE_GAP,
+        MIN(MAX(primaryCenter.y, minimumY), maximumY) - size / 2, size, size);
+    oppositeHandle.imageView.image = self.handle.imageView.image;
+    appSearchTarget.bounds = CGRectMake(0, 0, 64, 64);
+    appSearchTarget.center = CGPointMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds));
+    if (appSearchNavigation) {
+        appSearchNavigation.view.bounds = self.view.bounds;
+        appSearchNavigation.view.center = appSearchTarget.center;
+    }
+}
+
+-(void)dismissAppSearch{
+    if (!appSearchNavigation) return;
+    [appSearchNavigation.view endEditing:YES];
+    [appSearchNavigation willMoveToParentViewController:nil];
+    [appSearchNavigation.view removeFromSuperview];
+    [appSearchNavigation removeFromParentViewController];
+    appSearchNavigation = nil;
+    if (self.view.window.isKeyWindow && keyWindowBeforeSearch && !keyWindowBeforeSearch.hidden) {
+        [keyWindowBeforeSearch makeKeyWindow];
+    }
+    keyWindowBeforeSearch = nil;
+    [self resetAutoNubTimer];
+}
+
+-(void)showAppSearch{
+    if (appSearchNavigation || !self.view.window || UIApplication.sharedApplication.protectedDataAvailable == NO) return;
+    [self dismissPresentedQuickSwitchMenuImmediately];
+    [self cancelAutoNubTimer];
+    POAppSearchController *search = [[POAppSearchController alloc] initWithStyle:UITableViewStylePlain];
+    __weak typeof(self) weakSelf = self;
+    search.cancellation = ^{ [weakSelf dismissAppSearch]; };
+    search.selection = ^(NSString *bundle) {
+        [weakSelf dismissAppSearch];
+        [weakSelf pinAppWithBundleId:bundle];
+    };
+    appSearchNavigation = [[UINavigationController alloc] initWithRootViewController:search];
+    [self addChildViewController:appSearchNavigation];
+    [self.view addSubview:appSearchNavigation.view];
+    appSearchNavigation.view.transform = [[POApplicationHelper settings][@"leftHanded"] boolValue]
+        ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
+    [self layoutAdditionalControls];
+    [appSearchNavigation didMoveToParentViewController:self];
+    for (UIWindow *window in self.view.window.windowScene.windows) {
+        if (window.isKeyWindow) { keyWindowBeforeSearch = window; break; }
+    }
+    [self.view.window makeKeyWindow];
 }
 
 -(void)viewSafeAreaInsetsDidChange{
@@ -649,6 +810,14 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     }
 
     CGPoint pointInView = [self.view convertPoint:point fromView:self.view.window];
+    if (appSearchNavigation) {
+        CGPoint searchPoint = [appSearchNavigation.view convertPoint:point fromView:self.view.window];
+        return [appSearchNavigation.view hitTest:searchPoint withEvent:event];
+    }
+    CGPoint oppositePoint = [oppositeHandle convertPoint:point fromView:self.view.window];
+    if (!oppositeHandle.hidden && [oppositeHandle pointInside:oppositePoint withEvent:event]) {
+        return oppositeHandle;
+    }
     CGPoint handlePointInHandle = [self.handle convertPoint:point fromView:self.view.window];
     if (!self.handle.hidden && self.handle.alpha > 0.01 &&
         [self.handle pointInside:handlePointInHandle withEvent:event]) {
@@ -2683,6 +2852,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         [self layoutCantHostView];
     }
     lastLaidOutSize = bounds.size;
+    [self layoutAdditionalControls];
     [self updateInteractionBackdropsAnimated:NO];
     [self reevaluateKeyboardZoomAnimated:NO];
     if (panelState == POPanelStateOpen &&
@@ -2699,6 +2869,10 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 }
 
 -(void)dismissTransientInteractionUI{
+    [self dismissAppSearch];
+    handleSearchDragActive = NO;
+    appSearchTarget.hidden = YES;
+    handleSearchPreview.hidden = YES;
     if (hostedCategoryTransitionPending || runtimeHostedCategoryTransitionAnimating || handleVisualHandoffSnapshotView) {
         [self cancelRuntimeHostedCategoryTransition];
     }
@@ -3137,6 +3311,14 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 }
 
 -(void)handle:(POHandle *)handle didPanPanel:(UIPanGestureRecognizer *)recognizer{
+    if (handle == oppositeHandle) {
+        if (recognizer.state == UIGestureRecognizerStateEnded &&
+            fabs([recognizer translationInView:self.view].x) > 20 && ![self isPanelTransitioning]) {
+            if (panelState == POPanelStateOpen) [self close];
+            else if (panelState == POPanelStateClosed) [self open];
+        }
+        return;
+    }
     if (recognizer.state == UIGestureRecognizerStateBegan) {
         handlePanIntent = POHandlePanIntentNone;
         handlePanStartedNubbed = self.handle.isNubbed;
@@ -3269,6 +3451,47 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 }
 
 -(void)handle:(POHandle *)handle didLongPress:(UILongPressGestureRecognizer *)recognizer{
+    if (recognizer.state == UIGestureRecognizerStateBegan) {
+        handleSearchDragActive = [self canBeginQuickSwitchSession];
+        [self layoutAdditionalControls];
+        appSearchTarget.hidden = !handleSearchDragActive;
+        [self.view bringSubviewToFront:appSearchTarget];
+    }
+    CGPoint searchPoint = [recognizer locationInView:self.view];
+    if (handle == oppositeHandle && handleSearchDragActive) {
+        handleSearchPreview.image = oppositeHandle.imageView.image ?: [UIImage systemImageNamed:@"app"];
+        handleSearchPreview.transform = oppositeHandle.imageView.transform;
+        handleSearchPreview.center = searchPoint;
+        handleSearchPreview.hidden = NO;
+        [self.view bringSubviewToFront:handleSearchPreview];
+    }
+    BOOL insideSearchTarget = CGRectContainsPoint(CGRectInset(appSearchTarget.frame, -40, -40), searchPoint);
+    appSearchTarget.tintColor = insideSearchTarget ? UIColor.systemOrangeColor : UIColor.systemGreenColor;
+    if (handleSearchDragActive && recognizer.state == UIGestureRecognizerStateEnded && insideSearchTarget) {
+        handleSearchDragActive = NO;
+        appSearchTarget.hidden = YES;
+        handleSearchPreview.hidden = YES;
+        [self dismissPresentedQuickSwitchMenuImmediately];
+        [quickSwitchDragCoordinator cancelAnimated:NO];
+        [self hideMirrorZone];
+        [self showAppSearch];
+        return;
+    }
+    if (recognizer.state == UIGestureRecognizerStateEnded ||
+        recognizer.state == UIGestureRecognizerStateCancelled ||
+        recognizer.state == UIGestureRecognizerStateFailed) {
+        handleSearchDragActive = NO;
+        appSearchTarget.hidden = YES;
+        handleSearchPreview.hidden = YES;
+    }
+    if (handle == oppositeHandle) {
+        if (recognizer.state == UIGestureRecognizerStateBegan && handleSearchDragActive) {
+            [self cancelAutoNubTimer];
+        } else if (!handleSearchDragActive) {
+            [self resetAutoNubTimer];
+        }
+        return;
+    }
     if (recognizer.state == UIGestureRecognizerStateBegan) {
         if (![self canBeginQuickSwitchSession]) {
             return;
@@ -3577,9 +3800,8 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 
     [self hideMirrorZone];
     if (shouldOpenApp) {
-        NSString *bundleId = [app.bundleIdentifier copy];
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self openApplicationExternallyFromQuickSwitch:bundleId];
+            [self showAppSearch];
         });
     }
 }
