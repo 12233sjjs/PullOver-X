@@ -187,6 +187,16 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 }
 @end
 
+@interface POCenterWheelView : UIView
+@end
+@implementation POCenterWheelView
+- (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
+    CGFloat radius = CGRectGetWidth(self.bounds) / 2;
+    return hypot(point.x - CGRectGetMidX(self.bounds),
+                 point.y - CGRectGetMidY(self.bounds)) <= radius;
+}
+@end
+
 @interface POCenterMenuController : UIViewController
 @property(nonatomic, copy) void (^action)(NSInteger);
 @property(nonatomic, copy) void (^cancellation)(void);
@@ -200,9 +210,13 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"PullOver X";
-    self.view.backgroundColor = [UIColor.systemBackgroundColor colorWithAlphaComponent:0.94];
-    self.wheel = [[UIView alloc] init];
-    self.wheel.backgroundColor = UIColor.secondarySystemBackgroundColor;
+    self.view.backgroundColor = UIColor.clearColor;
+    UIControl *outside = [[UIControl alloc] initWithFrame:self.view.bounds];
+    outside.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [outside addTarget:self action:@selector(cancelMenu) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:outside];
+    self.wheel = [[POCenterWheelView alloc] init];
+    self.wheel.backgroundColor = [UIColor.secondarySystemBackgroundColor colorWithAlphaComponent:0.72];
     [self.view addSubview:self.wheel];
     NSArray *titles = @[@"搜索应用", @"结束播放应用", @"切换 VPN", @"重载窗口"];
     NSArray *labels = @[@"搜索应用，在窗口中打开", @"强制关闭正在播放的应用", @"切换 VPN，连接或断开", @"重新加载当前窗口应用"];
@@ -231,8 +245,9 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     }
     self.buttons = buttons;
     self.cancelButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [self.cancelButton setTitle:@"取消" forState:UIControlStateNormal];
-    self.cancelButton.backgroundColor = UIColor.tertiarySystemBackgroundColor;
+    [self.cancelButton setImage:[UIImage systemImageNamed:@"xmark"] forState:UIControlStateNormal];
+    self.cancelButton.accessibilityLabel = @"取消";
+    self.cancelButton.backgroundColor = [UIColor.tertiarySystemBackgroundColor colorWithAlphaComponent:0.65];
     self.cancelButton.layer.cornerRadius = 24;
     [self.cancelButton addTarget:self action:@selector(cancelMenu) forControlEvents:UIControlEventTouchUpInside];
     [self.wheel addSubview:self.cancelButton];
@@ -242,6 +257,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     self.statusLabel.numberOfLines = 3;
     self.statusLabel.textAlignment = NSTextAlignmentCenter;
     self.statusLabel.accessibilityTraits = UIAccessibilityTraitUpdatesFrequently;
+    self.statusLabel.userInteractionEnabled = NO;
     [self.view addSubview:self.statusLabel];
 }
 - (void)viewWillAppear:(BOOL)animated {
@@ -251,10 +267,10 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
     CGRect area = UIEdgeInsetsInsetRect(self.view.bounds, self.view.safeAreaInsets);
-    CGFloat diameter = MIN(360, MIN(CGRectGetWidth(area) - 24, CGRectGetHeight(area) - 80));
+    CGFloat diameter = MIN(240, MIN(CGRectGetWidth(area) - 24, CGRectGetHeight(area) - 24));
     diameter = MAX(1, diameter);
     self.wheel.bounds = CGRectMake(0, 0, diameter, diameter);
-    self.wheel.center = CGPointMake(CGRectGetMidX(area), CGRectGetMidY(area) - 24);
+    self.wheel.center = CGPointMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds));
     self.wheel.layer.cornerRadius = diameter / 2;
     CGFloat radius = (diameter - 64) / 2 - 4;
     for (NSInteger index = 0; index < self.buttons.count; index++) {
@@ -277,7 +293,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 
 @interface PullOverViewController ()<POHostSessionControllerDelegate, UIGestureRecognizerDelegate>{
     POHandle *oppositeHandle;
-    UIImageView *appSearchTarget;
+    UIView *appSearchTarget;
     UIImageView *handleSearchPreview;
     UINavigationController *appSearchNavigation;
     __weak UIWindow *keyWindowBeforeSearch;
@@ -582,8 +598,12 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     self.handle.allowsVerticalMovement = YES;
     oppositeHandle.layoutMode = POHandleLayoutModeLandscapeFixedBottomLeft;
     [self.view addSubview:oppositeHandle];
-    appSearchTarget = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"magnifyingglass.circle.fill"]];
-    appSearchTarget.tintColor = UIColor.systemGreenColor;
+    POCenterMenuController *targetPreview = [[POCenterMenuController alloc] init];
+    targetPreview.view.frame = CGRectMake(0, 0, 264, 264);
+    [targetPreview.view setNeedsLayout];
+    [targetPreview.view layoutIfNeeded];
+    appSearchTarget = targetPreview.wheel;
+    [appSearchTarget removeFromSuperview];
     appSearchTarget.hidden = YES;
     appSearchTarget.userInteractionEnabled = NO;
     [self.view addSubview:appSearchTarget];
@@ -719,7 +739,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     }
     oppositeHandle.frame = CGRectMake(oppositeX, oppositeY - size / 2, size, size);
     oppositeHandle.imageView.image = self.handle.imageView.image;
-    appSearchTarget.bounds = CGRectMake(0, 0, 64, 64);
+    appSearchTarget.bounds = CGRectMake(0, 0, 240, 240);
     appSearchTarget.center = CGPointMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds));
     if (appSearchNavigation) {
         appSearchNavigation.view.bounds = self.view.bounds;
@@ -750,6 +770,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     menu.cancellation = ^{ [weakSelf dismissAppSearch]; };
     menu.action = ^(NSInteger action) { [weakSelf performCenterAction:action]; };
     appSearchNavigation = [[UINavigationController alloc] initWithRootViewController:menu];
+    appSearchNavigation.view.backgroundColor = UIColor.clearColor;
     [self addChildViewController:appSearchNavigation];
     [self.view addSubview:appSearchNavigation.view];
     appSearchNavigation.view.transform = [[POApplicationHelper settings][@"leftHanded"] boolValue]
@@ -3761,8 +3782,8 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         handleSearchPreview.hidden = NO;
         [self.view bringSubviewToFront:handleSearchPreview];
     }
-    BOOL insideSearchTarget = CGRectContainsPoint(CGRectInset(appSearchTarget.frame, -40, -40), searchPoint);
-    appSearchTarget.tintColor = insideSearchTarget ? UIColor.systemOrangeColor : UIColor.systemGreenColor;
+    BOOL insideSearchTarget = hypot(searchPoint.x - appSearchTarget.center.x,
+                                   searchPoint.y - appSearchTarget.center.y) <= CGRectGetWidth(appSearchTarget.bounds) / 2;
     if (handleSearchDragActive && recognizer.state == UIGestureRecognizerStateEnded && insideSearchTarget) {
         handleSearchDragActive = NO;
         appSearchTarget.hidden = YES;
