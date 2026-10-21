@@ -28,6 +28,8 @@
 "Handle Size" = "把手大小";
 "Window Size" = "窗口大小比例";
 "Window Size Mode" = "窗口大小模式";
+"Window Corner Radius" = "窗口圆角半径";
+"Apps opened from another app use the floating window. Double tap the current window to open fullscreen and close the floating window." = "应用间跳转使用浮窗打开。双击当前窗口全屏打开，并关闭浮窗。";
 "Lock Handle Position" = "锁定把手位置";
 "Handle Opacity" = "把手透明度";
 "Handle Hidden Percentage" = "隐藏比例";

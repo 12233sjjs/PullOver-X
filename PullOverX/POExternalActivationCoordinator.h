@@ -3,6 +3,7 @@
 @interface POExternalActivationCoordinator : NSObject
 
 + (instancetype)sharedInstance;
+- (void)allowNativeActivationForBundleId:(NSString *)bundleId;
 
 - (id)prepareOpenApplicationRequestIfNeeded:(id)request completion:(id)completion;
 - (id)prepareTrustedWorkspaceOpenApplication:(id)application

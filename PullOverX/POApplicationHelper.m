@@ -319,6 +319,7 @@ static id POSharedObjectForClass(Class cls) {
             @"handleOpacity": @100,
             @"nubHiddenPercentage": @67,
             @"windowSize": @100,
+            @"windowCornerRadius": @20,
             @"windowSizeMode": @"scale",
             @"lockHandlePosition": @NO,
             @"landscapeBehavior": @"rotate",

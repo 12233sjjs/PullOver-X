@@ -238,9 +238,31 @@
 			<key>maximumValue</key>
 			<integer>100</integer>
 			<key>increment</key>
-			<integer>5</integer>
+			<integer>1</integer>
 			<key>unit</key>
 			<string>%</string>
+		</dict>
+		<dict>
+			<key>cellClass</key>
+			<string>POValueSliderTableCell</string>
+			<key>default</key>
+			<integer>20</integer>
+			<key>key</key>
+			<string>windowCornerRadius</string>
+			<key>label</key>
+			<string>Window Corner Radius</string>
+			<key>defaults</key>
+			<string>com.mlgm.pulloverx</string>
+			<key>get</key>
+			<string>getValueForSpecifier:</string>
+			<key>set</key>
+			<string>setValue:forSpecifier:</string>
+			<key>minimumValue</key>
+			<integer>0</integer>
+			<key>maximumValue</key>
+			<integer>100</integer>
+			<key>increment</key>
+			<integer>1</integer>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -290,7 +312,7 @@
 			<key>label</key>
 			<string>Behavior</string>
 			<key>footerText</key>
-			<string>Only whitelisted target apps open in PullOver X when launched by another native app through a URL or Open In.</string>
+			<string>Apps opened from another app use the floating window. Double tap the current window to open fullscreen and close the floating window.</string>
 		</dict>
 		<dict>
 			<key>cellClass</key>
@@ -403,59 +425,6 @@
 			<string>setValue:forSpecifier:</string>
 			<key>get</key>
 			<string>getValueForSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>default</key>
-			<false/>
-			<key>key</key>
-			<string>externalURLRoutingEnabled</string>
-			<key>label</key>
-			<string>URL Routing</string>
-			<key>defaults</key>
-			<string>com.mlgm.pulloverx</string>
-			<key>set</key>
-			<string>setValue:forSpecifier:</string>
-			<key>get</key>
-			<string>getValueForSpecifier:</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSLinkListCell</string>
-			<key>default</key>
-			<array/>
-			<key>defaults</key>
-			<string>com.mlgm.pulloverx</string>
-			<key>detail</key>
-			<string>POApplicationWhitelistController</string>
-			<key>id</key>
-			<string>externalURLRoutingWhitelist</string>
-			<key>key</key>
-			<string>externalURLRoutingWhitelist</string>
-			<key>label</key>
-			<string>URL Routing Whitelist</string>
-			<key>sections</key>
-			<array>
-				<dict>
-					<key>sectionType</key>
-					<string>User</string>
-				</dict>
-				<dict>
-					<key>sectionType</key>
-					<string>System</string>
-				</dict>
-			</array>
-			<key>showIdentifiersAsSubtitle</key>
-			<true/>
-			<key>defaultApplicationSwitchValue</key>
-			<false/>
-			<key>useSearchBar</key>
-			<true/>
-			<key>includeIdentifiersInSearch</key>
-			<true/>
-			<key>PostNotification</key>
-			<string>com.mlgm.pulloverx.settings-changed</string>
 		</dict>
 		<dict>
 			<key>cell</key>

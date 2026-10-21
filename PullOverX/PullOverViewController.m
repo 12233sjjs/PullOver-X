@@ -7,6 +7,7 @@
 
 #import "PullOverViewController.h"
 #import "POHostSessionController.h"
+#import "POExternalActivationCoordinator.h"
 #import "POQuickSwitchDragCoordinator.h"
 #import "POQuickSwitchMetrics.h"
 #import "POSplitSessionController.h"
@@ -20,7 +21,11 @@
 #include <dlfcn.h>
 #define HANDLE_EDGE_GAP 5
 #define CONTENT_EDGE_GAP 5
-#define CONTENT_CORNER_RADIUS 20
+static CGFloat POContentCornerRadius(void) {
+    id value = [POApplicationHelper settings][@"windowCornerRadius"];
+    CGFloat radius = value ? [value doubleValue] : 20.0;
+    return isfinite(radius) ? MIN(MAX(radius, 0), 100) : 20.0;
+}
 #define CONTENT_SHADOW_OPACITY 0.28
 #define CONTENT_SHADOW_FADE_DISTANCE 12.0
 #define CLOSED_CONTENT_OFFSET_EPSILON 0.5
@@ -230,6 +235,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     UIView *panelBackdropView;
     UIView *quickSwitchBackdropView;
     UITapGestureRecognizer *panelBackdropTapGestureRecognizer;
+    UITapGestureRecognizer *windowDoubleTapGestureRecognizer;
     UIPanGestureRecognizer *panelBackdropPanGestureRecognizer;
     UIView *shadowView;
     UIView *keyboardZoomContainer;
@@ -438,7 +444,15 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 
     self.contentView = [[UIView alloc] initWithFrame:CGRectZero];
     self.contentView.backgroundColor = [UIColor secondarySystemBackgroundColor];
-    self.contentView.layer.cornerRadius = CONTENT_CORNER_RADIUS;
+    self.contentView.layer.cornerRadius = POContentCornerRadius();
+    windowDoubleTapGestureRecognizer = [[UITapGestureRecognizer alloc]
+        initWithTarget:self action:@selector(windowDidDoubleTap:)];
+    windowDoubleTapGestureRecognizer.numberOfTapsRequired = 2;
+    windowDoubleTapGestureRecognizer.cancelsTouchesInView = NO;
+    windowDoubleTapGestureRecognizer.delaysTouchesBegan = NO;
+    windowDoubleTapGestureRecognizer.delaysTouchesEnded = NO;
+    windowDoubleTapGestureRecognizer.delegate = self;
+    [self.contentView addGestureRecognizer:windowDoubleTapGestureRecognizer];
     if (@available(iOS 13.0, *)) {
         self.contentView.layer.cornerCurve = kCACornerCurveContinuous;
     }
@@ -462,7 +476,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     shadowView.layer.shadowOffset = CGSizeMake(0, 1);
     shadowView.layer.shadowRadius = 8;
     shadowView.layer.shadowOpacity = 0;
-    shadowView.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:shadowView.bounds cornerRadius:CONTENT_CORNER_RADIUS].CGPath;
+    shadowView.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:shadowView.bounds cornerRadius:POContentCornerRadius()].CGPath;
     [keyboardZoomContainer addSubview:shadowView];
 
     [keyboardZoomContainer addSubview:self.contentView];
@@ -789,7 +803,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     shadowView.frame = keyboardZoomContainer.bounds;
     self.contentView.frame = keyboardZoomContainer.bounds;
     shadowView.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:shadowView.bounds
-                                                              cornerRadius:CONTENT_CORNER_RADIUS].CGPath;
+                                                              cornerRadius:POContentCornerRadius()].CGPath;
     [self layoutContextView];
 }
 
@@ -928,6 +942,10 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 }
 
 -(BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer{
+    if (gestureRecognizer == windowDoubleTapGestureRecognizer) {
+        return panelState == POPanelStateOpen && ![self isPanelTransitioning] &&
+            hostSession.activeBundleId.length > 0 && !appSearchNavigation;
+    }
     if (gestureRecognizer == panelBackdropTapGestureRecognizer) {
         return [self currentInteractionMode] == POInteractionModeDrawerModal &&
             panelState == POPanelStateOpen && ![self isPanelTransitioning];
@@ -941,6 +959,17 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         return fabs(velocity.x) > fabs(velocity.y) && fabs(velocity.x) > 20.0;
     }
     return YES;
+}
+
+-(BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
+    shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)other{
+    return gestureRecognizer == windowDoubleTapGestureRecognizer || other == windowDoubleTapGestureRecognizer;
+}
+
+-(void)windowDidDoubleTap:(UITapGestureRecognizer *)recognizer{
+    if (recognizer.state == UIGestureRecognizerStateRecognized) {
+        [self handle:self.handle didReceiveDoubleTap:recognizer];
+    }
 }
 
 -(UIView *)interactiveViewForWindowPoint:(CGPoint)point event:(UIEvent *)event{
@@ -2978,8 +3007,9 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         self->keyboardZoomBaseFrame = normalCardFrame;
         shadowView.frame = keyboardZoomContainer.bounds;
         self.contentView.frame = keyboardZoomContainer.bounds;
+        self.contentView.layer.cornerRadius = POContentCornerRadius();
         shadowView.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:shadowView.bounds
-                                                                  cornerRadius:CONTENT_CORNER_RADIUS].CGPath;
+                                                                  cornerRadius:POContentCornerRadius()].CGPath;
     }];
     CGFloat shadowProgress = MIN(MAX(scrollView.contentOffset.x / CONTENT_SHADOW_FADE_DISTANCE, 0), 1);
     shadowView.layer.shadowOpacity = CONTENT_SHADOW_OPACITY * shadowProgress;
@@ -3963,7 +3993,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         [self showTargetTransitionPresentationForBundleId:bundleId];
     }
 
-    [hostSession activateBundleId:bundleId];
+    [self pinAppWithBundleId:bundleId];
 }
 
 -(void)showCantHostAfterNativeTakeover{
@@ -4011,7 +4041,7 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     [self cancelQuickSwitchPrewarm];
 
     if (targetIsCurrentHostedApp && panelState != POPanelStateClosed) {
-        [self showCantHostAfterNativeTakeover];
+        [self forceCloseAndReleaseImmediately];
         return;
     }
 
@@ -4050,7 +4080,8 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         return;
     }
 
-    [self prepareForNativeApplicationTakeover:bundleId];
+    [[POExternalActivationCoordinator sharedInstance] allowNativeActivationForBundleId:bundleId];
+    [self forceCloseAndReleaseImmediately];
     [[UIApplication sharedApplication] launchApplicationWithIdentifier:bundleId suspended:NO];
 }
 

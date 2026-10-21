@@ -334,6 +334,8 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
 @property (nonatomic, assign) NSUInteger nativeRouteGeneration;
 @property (nonatomic, assign) BOOL nativeRouteInFlight;
 @property (nonatomic, copy) NSString *pendingNativeTargetBundleId;
+@property (nonatomic, copy) NSString *explicitNativeBundleId;
+@property (nonatomic, assign) NSTimeInterval explicitNativeDeadline;
 
 - (BOOL)beginNativeRouteForTargetBundleId:(NSString *)targetBundleId
                            sourceBundleId:(NSString *)sourceBundleId;
@@ -347,6 +349,16 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
 @end
 
 @implementation POExternalActivationCoordinator
+
+- (void)allowNativeActivationForBundleId:(NSString *)bundleId {
+    self.explicitNativeBundleId = bundleId;
+    self.explicitNativeDeadline = NSProcessInfo.processInfo.systemUptime + 3.0;
+}
+
+- (BOOL)isExplicitNativeActivation:(NSString *)bundleId {
+    return [bundleId isEqualToString:self.explicitNativeBundleId] &&
+        NSProcessInfo.processInfo.systemUptime < self.explicitNativeDeadline;
+}
 
 + (instancetype)sharedInstance {
     static POExternalActivationCoordinator *sharedInstance;
@@ -363,6 +375,7 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
     }
 
     NSString *targetBundleId = POExternalTargetBundleIdentifierFromRequest(request);
+    if ([self isExplicitNativeActivation:targetBundleId]) return completion;
     id clientProcess = POExternalReadObject(request, NSSelectorFromString(@"clientProcess"));
     if (POExternalIsNotificationLaunch(request, POExternalOpenOptions(request)) ||
         POExternalValueHasNotificationMarker(clientProcess, 0)) {
@@ -429,7 +442,9 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
     }
 
     NSURL *openURL = POExternalOpenURL(request);
-    if (!POExternalIsValidURL(openURL)) {
+    if (!POExternalIsValidURL(openURL) &&
+        !POExternalIsUserApplicationBundleIdentifier(POExternalBundleIdentifierOrString(clientProcess)) &&
+        !POExternalIsUserApplicationBundleIdentifier(POExternalPayloadSourceBundleIdentifier(request))) {
         return completion;
     }
     NSDictionary *openOptions = POExternalOpenOptionsDictionary(request);
@@ -461,7 +476,9 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
             documentOpenRequest && openURL.isFileURL && directSourceIsBroker &&
             payloadAttributableToHostedFlow;
 
-        if (directHostedSource || payloadHostedBroker || brokeredDocumentFromPullOver) {
+        if (directHostedSource || payloadHostedBroker || brokeredDocumentFromPullOver ||
+            POExternalIsUserApplicationBundleIdentifier(directSourceBundleId) ||
+            POExternalIsUserApplicationBundleIdentifier(payloadSourceBundleId)) {
             NSString *sourceBundleId = hostedBundleId;
             if ([targetBundleId isEqualToString:sourceBundleId]) {
                 return completion;
@@ -479,7 +496,6 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
             if (!isTrusted && !directHostedSource) {
                 return completion;
             }
-
             if (!POExternalPrepareSuspendedOpenRequest(request)) {
                 return completion;
             }
@@ -519,7 +535,7 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
     NSString *nativeSourceBundleId = POExternalAttributedUserSourceBundleIdentifier(
         directSourceBundleId, payloadSourceBundleId, openURL, documentOpenRequest);
     SEL trustedSelector = NSSelectorFromString(@"isTrusted");
-    if (![POApplicationHelper isExternalURLRoutingTargetBundleId:targetBundleId] ||
+    if (!POExternalIsUserApplicationBundleIdentifier(targetBundleId) ||
         nativeSourceBundleId.length == 0 ||
         [targetBundleId isEqualToString:nativeSourceBundleId] ||
         !POExternalPullOverIsStableClosed() ||
@@ -567,6 +583,7 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
     NSString *targetBundleId = [application isKindOfClass:[NSString class]]
         ? application
         : POExternalBundleIdentifier(application);
+    if ([self isExplicitNativeActivation:targetBundleId]) return options;
     if (!POExternalIsUserApplicationBundleIdentifier(targetBundleId)) {
         return options;
     }
@@ -639,7 +656,9 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
     }
 
     NSURL *openURL = POExternalURLFromOptions(options);
-    if (!POExternalIsValidURL(openURL)) {
+    if (!POExternalIsValidURL(openURL) &&
+        !POExternalIsUserApplicationBundleIdentifier(POExternalOriginBundleIdentifier(origin)) &&
+        !POExternalIsUserApplicationBundleIdentifier(POExternalPayloadSourceBundleIdentifierFromOptions(options))) {
         return options;
     }
 
@@ -653,8 +672,7 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
 
     BOOL hostedRouteAvailable = manager.isForegroundLeaseActive &&
         hostedBundleId.length > 0 && pullOverWindow.controller.isPanelActive;
-    if (hostedRouteAvailable && ![targetBundleId isEqualToString:hostedBundleId] &&
-        documentOpenRequest && openURL.isFileURL) {
+    if (hostedRouteAvailable && ![targetBundleId isEqualToString:hostedBundleId]) {
         BOOL originIsUserApplication = POExternalIsUserApplicationBundleIdentifier(originBundleId);
         BOOL originIsBroker = originBundleId.length > 0 && !originIsUserApplication;
         BOOL payloadHostedSource = [payloadSourceBundleId isEqualToString:hostedBundleId];
@@ -663,8 +681,8 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
         BOOL payloadAttributableToHostedFlow = payloadSourceBundleId.length == 0 ||
             payloadHostedSource || payloadSourceIsBroker;
 
-        if (!((!originIsBroker && !payloadSourceIsBroker) ||
-              originIsUserApplication || !payloadAttributableToHostedFlow)) {
+        if (originIsUserApplication || payloadHostedSource ||
+            (documentOpenRequest && openURL.isFileURL && originIsBroker && payloadAttributableToHostedFlow)) {
             id preparedOptions = POExternalOptionsByAddingActivateSuspended(options);
             if (!preparedOptions) {
                 return options;
@@ -705,7 +723,7 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
 
     NSString *nativeSourceBundleId = POExternalAttributedUserSourceBundleIdentifier(
         originBundleId, payloadSourceBundleId, openURL, documentOpenRequest);
-    if (![POApplicationHelper isExternalURLRoutingTargetBundleId:targetBundleId] ||
+    if (!POExternalIsUserApplicationBundleIdentifier(targetBundleId) ||
         nativeSourceBundleId.length == 0 ||
         [targetBundleId isEqualToString:nativeSourceBundleId] ||
         !POExternalPullOverIsStableClosed()) {
