@@ -2,7 +2,7 @@ name: Build PullOver X
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, 'upload/1.7.1-source-20261021']
   workflow_dispatch:
     inputs:
       scheme:
@@ -84,9 +84,11 @@ jobs:
 
   release:
     name: Create Release
+    permissions:
+      contents: write
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
