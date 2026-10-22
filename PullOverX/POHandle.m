@@ -54,6 +54,7 @@
 }
 
 -(CGFloat)handleOpacity{
+    if (self.forceOpaque) return 1.0;
     NSDictionary *settings = [POApplicationHelper settings];
     id configuredValue = self.opacityPreferenceKey ? settings[self.opacityPreferenceKey] : nil;
     if (!configuredValue) configuredValue = settings[@"handleOpacity"];
@@ -68,10 +69,16 @@
 
 -(void)applyHandleOpacity{
     CGFloat opacity = [self handleOpacity];
-    self.backgroundColor = [UIColor colorWithWhite:1 alpha:0.04 * opacity];
+    self.backgroundColor = self.forceOpaque ? UIColor.secondarySystemBackgroundColor : [UIColor colorWithWhite:1 alpha:0.04 * opacity];
     self.layer.shadowOpacity = (float)(0.32 * opacity);
     blurView.alpha = opacity;
     self.imageView.alpha = opacity;
+}
+
+-(void)setForceOpaque:(BOOL)forceOpaque{
+    if (_forceOpaque == forceOpaque) return;
+    _forceOpaque = forceOpaque;
+    [self applyHandleOpacity];
 }
 
 -(CGFloat)fullCornerRadius{

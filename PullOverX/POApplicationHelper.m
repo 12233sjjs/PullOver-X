@@ -327,7 +327,6 @@ static id POSharedObjectForClass(Class cls) {
             @"centerActionLeft": @3,
             @"centerActionTopLeft": @7,
             @"windowSize": @100,
-            @"secondWindowSize": @60,
             @"windowCornerRadius": @20,
             @"windowSizeMode": @"scale",
             @"lockHandlePosition": @NO,

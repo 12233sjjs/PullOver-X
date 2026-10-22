@@ -322,19 +322,6 @@
 			<key>label</key><string>中央轮盘</string>
 		</dict>
 		<dict>
-			<key>cellClass</key><string>POValueSliderTableCell</string>
-			<key>label</key><string>第二窗口大小</string>
-			<key>key</key><string>secondWindowSize</string>
-			<key>default</key><integer>60</integer>
-			<key>defaults</key><string>com.mlgm.pulloverx</string>
-			<key>get</key><string>getValueForSpecifier:</string>
-			<key>set</key><string>setValue:forSpecifier:</string>
-			<key>minimumValue</key><integer>0</integer>
-			<key>maximumValue</key><integer>100</integer>
-			<key>increment</key><integer>1</integer>
-			<key>unit</key><string>%</string>
-		</dict>
-		<dict>
 			<key>cell</key><string>PSLinkListCell</string>
 			<key>detail</key><string>PSListItemsController</string>
 			<key>label</key><string>上方操作</string>

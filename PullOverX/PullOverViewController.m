@@ -1034,7 +1034,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     UIStackView *tools = [[UIStackView alloc] init];
     tools.axis = UILayoutConstraintAxisVertical;
     tools.distribution = UIStackViewDistributionFillEqually;
-    tools.backgroundColor = [UIColor.secondarySystemBackgroundColor colorWithAlphaComponent:0.9];
+    tools.backgroundColor = UIColor.secondarySystemBackgroundColor;
     tools.layer.cornerRadius = 8;
     for (NSUInteger index = 0; index < symbols.count; index++) {
         UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -1072,19 +1072,17 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     primaryWindowTools.bounds = CGRectMake(0, 0, 44, 88);
     primaryWindowTools.center = CGPointMake(primaryX, MIN(MAX(CGRectGetMinY(primary) + 50, CGRectGetMinY(safe) + 44), CGRectGetMaxY(safe) - 44));
     if (secondWindow) {
-        CGFloat value = [[POApplicationHelper settings][@"secondWindowSize"] doubleValue];
-        CGFloat ratio = isfinite(value) ? MIN(MAX(round(value), 0), 100) / 100.0 : 0.6;
         CGFloat maximumWidth = MAX(1, MIN(primary.size.width, safe.size.width) - 48);
         CGFloat maximumHeight = MIN(primary.size.height, safe.size.height);
-        CGFloat fit = MIN(maximumWidth / MAX(1, primary.size.width), maximumHeight / MAX(1, primary.size.height));
-        CGSize size = CGSizeMake(primary.size.width * fit * ratio, primary.size.height * fit * ratio);
-        secondWindow.view.hidden = ratio <= 0;
+        CGSize size = CGSizeMake(MIN(primary.size.width * 0.9, maximumWidth),
+                                 MIN(primary.size.height * 0.9, maximumHeight));
+        secondWindow.view.hidden = NO;
         secondWindow.view.transform = upright;
         secondWindow.view.bounds = CGRectMake(0, 0, size.width, size.height);
         CGFloat x = mirrored ? CGRectGetMaxX(primary) - size.width / 2 : CGRectGetMinX(primary) + size.width / 2;
         x = MIN(MAX(x, CGRectGetMinX(safe) + size.width / 2 + (mirrored ? 48 : 0)),
                 CGRectGetMaxX(safe) - size.width / 2 - (mirrored ? 0 : 48));
-        CGFloat y = MIN(MAX(CGRectGetMidY(primary) + primary.size.height * 0.12, CGRectGetMinY(safe) + size.height / 2), CGRectGetMaxY(safe) - size.height / 2);
+        CGFloat y = CGRectGetMaxY(primary) - size.height / 2;
         secondWindow.view.center = CGPointMake(x, y);
         [secondWindow.view setNeedsLayout];
         secondaryWindowTools.transform = upright;
@@ -1488,6 +1486,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 }
 
 -(void)updateInteractionBackdropsAnimated:(BOOL)animated{
+    self.handle.forceOpaque = panelState != POPanelStateClosed;
     [self layoutWindowControls];
     oppositeHandle.hidden = panelState != POPanelStateClosed;
     if (!panelBackdropView || !quickSwitchBackdropView || !scrollView) {
@@ -3979,7 +3978,16 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         return;
     }
     [self dismissAppSearch];
-    if ([bundleId isEqualToString:secondWindow.bundleId]) [self closeSecondWindow];
+    if (panelState == POPanelStateOpen && secondWindow) {
+        [self dismissPresentedQuickSwitchMenuImmediately];
+        if (![bundleId isEqualToString:hostSession.activeBundleId] &&
+            ![bundleId isEqualToString:pinnedBundleId] &&
+            ![bundleId isEqualToString:secondWindow.bundleId]) {
+            [self openSecondWindow:bundleId];
+        }
+        [self layoutWindowControls];
+        return;
+    }
 
     BOOL hasVisibleLivePresentation = contextView && !contextView.hidden &&
         contextView.superview == self.contentView && presentationBundleId.length > 0;
@@ -4030,10 +4038,15 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         return NO;
     }
     [self pinAppWithBundleId:bundleId];
-    return [pinnedBundleId isEqualToString:bundleId];
+    return [pinnedBundleId isEqualToString:bundleId] || [secondWindow.bundleId isEqualToString:bundleId];
 }
 
 -(BOOL)isExternallyHostedApplicationVisible:(NSString *)bundleId{
+    if (bundleId.length > 0 && [self isPanelFullyOpen] &&
+        [secondWindow.bundleId isEqualToString:bundleId]) {
+        return secondWindow.session.state == POHostSessionStateLive &&
+            !secondWindow.view.hidden && secondWindow.stack.superview == secondWindow.canvas;
+    }
     return bundleId.length > 0 && [self isPanelFullyOpen] &&
         hostSession.state == POHostSessionStateLive &&
         [hostSession.activeBundleId isEqualToString:bundleId] &&
