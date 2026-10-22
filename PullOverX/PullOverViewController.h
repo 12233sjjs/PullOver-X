@@ -19,6 +19,7 @@
 @interface PullOverViewController : UIViewController <UIScrollViewDelegate, POHandleDelegate, QuickSwitchSelectionDelegate>
 
 -(void)close;
+-(BOOL)dismissSearchForHomeGesture;
 -(void)forceCloseAndReleaseImmediately;
 -(void)prepareForNativeApplicationTakeover:(NSString *)bundleId;
 -(void)routeExternalApplicationInsidePullOver:(NSString *)bundleId;

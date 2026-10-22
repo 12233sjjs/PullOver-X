@@ -54,9 +54,16 @@
 }
 
 -(CGFloat)handleOpacity{
-    id configuredValue = [POApplicationHelper settings][@"handleOpacity"];
+    NSDictionary *settings = [POApplicationHelper settings];
+    id configuredValue = self.opacityPreferenceKey ? settings[self.opacityPreferenceKey] : nil;
+    if (!configuredValue) configuredValue = settings[@"handleOpacity"];
     CGFloat opacity = configuredValue ? [configuredValue doubleValue] / 100.0 : 1.0;
-    return MIN(MAX(opacity, 0.0), 1.0);
+    return isfinite(opacity) ? MIN(MAX(opacity, 0.0), 1.0) : 1.0;
+}
+
+-(void)setOpacityPreferenceKey:(NSString *)key{
+    _opacityPreferenceKey = [key copy];
+    [self applyHandleOpacity];
 }
 
 -(void)applyHandleOpacity{

@@ -110,25 +110,57 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     }
 }
 
-@interface POAppSearchController : UITableViewController <UISearchBarDelegate>
+@interface POAppSearchController : UIViewController <UISearchBarDelegate, UICollectionViewDataSource, UICollectionViewDelegate>
 @property(nonatomic, copy) void (^selection)(NSString *);
 @property(nonatomic, copy) void (^cancellation)(void);
 @property(nonatomic, strong) NSArray<NSDictionary *> *applications;
 @property(nonatomic, strong) NSArray<NSDictionary *> *matches;
-@property(nonatomic, strong) UIView *dismissSwipeArea;
+@property(nonatomic, strong) UICollectionView *collectionView;
+@property(nonatomic, strong) UISearchBar *searchBar;
 @end
 
 @implementation POAppSearchController
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"Search Apps";
-    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc]
-        initWithBarButtonSystemItem:UIBarButtonSystemItemCancel target:self action:@selector(cancelSearch)];
-    UISearchBar *search = [[UISearchBar alloc] initWithFrame:CGRectMake(0, 0, 320, 56)];
-    search.placeholder = @"App name or bundle ID";
+    self.view.backgroundColor = UIColor.clearColor;
+    UIVisualEffectView *background = [[UIVisualEffectView alloc]
+        initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterial]];
+    background.frame = self.view.bounds;
+    background.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    background.userInteractionEnabled = NO;
+    [self.view addSubview:background];
+    UISearchBar *search = [[UISearchBar alloc] init];
+    self.searchBar = search;
+    search.placeholder = @"应用库";
+    search.searchBarStyle = UISearchBarStyleMinimal;
     search.delegate = self;
-    self.tableView.tableHeaderView = search;
-    self.tableView.keyboardDismissMode = UIScrollViewKeyboardDismissModeOnDrag;
+    search.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:search];
+    UICollectionViewFlowLayout *layout = [[UICollectionViewFlowLayout alloc] init];
+    layout.minimumInteritemSpacing = 12;
+    layout.minimumLineSpacing = 12;
+    layout.sectionInset = UIEdgeInsetsMake(8, 12, 12, 12);
+    self.collectionView = [[UICollectionView alloc] initWithFrame:CGRectZero collectionViewLayout:layout];
+    self.collectionView.translatesAutoresizingMaskIntoConstraints = NO;
+    self.collectionView.backgroundColor = UIColor.clearColor;
+    self.collectionView.dataSource = self;
+    self.collectionView.delegate = self;
+    self.collectionView.keyboardDismissMode = UIScrollViewKeyboardDismissModeOnDrag;
+    self.collectionView.alwaysBounceVertical = YES;
+    [self.collectionView registerClass:UICollectionViewCell.class forCellWithReuseIdentifier:@"app"];
+    [self.view addSubview:self.collectionView];
+    NSLayoutYAxisAnchor *bottom = self.view.safeAreaLayoutGuide.bottomAnchor;
+    if (@available(iOS 15.0, *)) bottom = self.view.keyboardLayoutGuide.topAnchor;
+    [NSLayoutConstraint activateConstraints:@[
+        [search.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:8],
+        [search.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:4],
+        [search.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-4],
+        [search.heightAnchor constraintEqualToConstant:56],
+        [self.collectionView.topAnchor constraintEqualToAnchor:search.bottomAnchor],
+        [self.collectionView.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor],
+        [self.collectionView.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor],
+        [self.collectionView.bottomAnchor constraintEqualToAnchor:bottom],
+    ]];
     NSMutableDictionary *apps = [NSMutableDictionary dictionary];
     Class workspaceClass = NSClassFromString(@"LSApplicationWorkspace");
     SEL shared = NSSelectorFromString(@"defaultWorkspace");
@@ -156,56 +188,17 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 }
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
-    [self.navigationController setNavigationBarHidden:NO animated:NO];
+    [self.navigationController setNavigationBarHidden:YES animated:NO];
 }
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    UIView *container = self.navigationController.view;
-    if (!container || self.dismissSwipeArea) return;
-    UIView *area = [[UIView alloc] init];
-    area.translatesAutoresizingMaskIntoConstraints = NO;
-    area.backgroundColor = UIColor.systemBackgroundColor;
-    [area addGestureRecognizer:[[UIPanGestureRecognizer alloc]
-        initWithTarget:self action:@selector(swipeToClose:)]];
-    [container addSubview:area];
-    self.dismissSwipeArea = area;
-    NSLayoutYAxisAnchor *bottom = container.safeAreaLayoutGuide.bottomAnchor;
-    if (@available(iOS 15.0, *)) bottom = container.keyboardLayoutGuide.topAnchor;
-    [NSLayoutConstraint activateConstraints:@[
-        [area.leadingAnchor constraintEqualToAnchor:container.leadingAnchor],
-        [area.trailingAnchor constraintEqualToAnchor:container.trailingAnchor],
-        [area.bottomAnchor constraintEqualToAnchor:bottom],
-        [area.heightAnchor constraintEqualToConstant:56],
-    ]];
-    UIView *grip = [[UIView alloc] init];
-    grip.translatesAutoresizingMaskIntoConstraints = NO;
-    grip.backgroundColor = UIColor.secondaryLabelColor;
-    grip.layer.cornerRadius = 2;
-    [area addSubview:grip];
-    [NSLayoutConstraint activateConstraints:@[
-        [grip.centerXAnchor constraintEqualToAnchor:area.centerXAnchor],
-        [grip.centerYAnchor constraintEqualToAnchor:area.centerYAnchor],
-        [grip.widthAnchor constraintEqualToConstant:36],
-        [grip.heightAnchor constraintEqualToConstant:4],
-    ]];
-    self.tableView.contentInset = UIEdgeInsetsMake(0, 0, 56, 0);
+    [self.searchBar becomeFirstResponder];
 }
-- (void)viewWillDisappear:(BOOL)animated {
-    [super viewWillDisappear:animated];
-    [self.dismissSwipeArea removeFromSuperview];
-    self.dismissSwipeArea = nil;
-}
-- (void)swipeToClose:(UIPanGestureRecognizer *)gesture {
-    CGPoint translation = [gesture translationInView:gesture.view];
-    CGPoint velocity = [gesture velocityInView:gesture.view];
-    if (gesture.state == UIGestureRecognizerStateEnded &&
-        -translation.y > fabs(translation.x) &&
-        (translation.y <= -40 || velocity.y <= -400)) {
-        [self cancelSearch];
-    }
-}
-- (void)cancelSearch {
-    if (self.cancellation) self.cancellation();
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    UICollectionViewFlowLayout *layout = (UICollectionViewFlowLayout *)self.collectionView.collectionViewLayout;
+    CGSize size = CGSizeMake(MAX(1, floor((CGRectGetWidth(self.collectionView.bounds) - 36) / 2)), 72);
+    if (!CGSizeEqualToSize(layout.itemSize, size)) layout.itemSize = size;
 }
 - (void)searchBar:(UISearchBar *)searchBar textDidChange:(NSString *)text {
     NSString *query = [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
@@ -217,24 +210,60 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
         }]];
     UILabel *empty = [[UILabel alloc] init];
     empty.textAlignment = NSTextAlignmentCenter;
-    empty.text = self.applications.count ? @"No matching apps" : @"No available apps";
-    self.tableView.backgroundView = self.matches.count ? nil : empty;
-    [self.tableView reloadData];
+    empty.text = self.applications.count ? @"没有匹配的应用" : @"暂无可用应用";
+    self.collectionView.backgroundView = self.matches.count ? nil : empty;
+    [self.collectionView reloadData];
 }
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+- (NSInteger)collectionView:(UICollectionView *)collectionView numberOfItemsInSection:(NSInteger)section {
     return self.matches.count;
 }
-- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
-    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"app"];
-    if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"app"];
-    NSDictionary *app = self.matches[path.row];
-    cell.textLabel.text = app[@"name"];
-    cell.detailTextLabel.text = app[@"bundle"];
-    cell.imageView.image = [POApplicationHelper imageForBundleId:app[@"bundle"]];
+- (BOOL)accessibilityPerformEscape {
+    if (self.cancellation) self.cancellation();
+    return YES;
+}
+- (UICollectionViewCell *)collectionView:(UICollectionView *)collectionView cellForItemAtIndexPath:(NSIndexPath *)path {
+    UICollectionViewCell *cell = [collectionView dequeueReusableCellWithReuseIdentifier:@"app" forIndexPath:path];
+    UIImageView *icon = (UIImageView *)[cell.contentView viewWithTag:1];
+    UILabel *name = (UILabel *)[cell.contentView viewWithTag:2];
+    if (!icon) {
+        cell.contentView.backgroundColor = [UIColor.secondarySystemBackgroundColor colorWithAlphaComponent:0.65];
+        cell.contentView.layer.cornerRadius = 16;
+        icon = [[UIImageView alloc] init];
+        icon.tag = 1;
+        icon.contentMode = UIViewContentModeScaleAspectFit;
+        icon.translatesAutoresizingMaskIntoConstraints = NO;
+        [cell.contentView addSubview:icon];
+        name = [[UILabel alloc] init];
+        name.tag = 2;
+        name.font = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
+        name.numberOfLines = 2;
+        name.adjustsFontSizeToFitWidth = YES;
+        name.minimumScaleFactor = 0.8;
+        name.translatesAutoresizingMaskIntoConstraints = NO;
+        [cell.contentView addSubview:name];
+        [NSLayoutConstraint activateConstraints:@[
+            [icon.leadingAnchor constraintEqualToAnchor:cell.contentView.leadingAnchor constant:10],
+            [icon.centerYAnchor constraintEqualToAnchor:cell.contentView.centerYAnchor],
+            [icon.widthAnchor constraintEqualToConstant:36],
+            [icon.heightAnchor constraintEqualToConstant:36],
+            [name.leadingAnchor constraintEqualToAnchor:icon.trailingAnchor constant:8],
+            [name.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-8],
+            [name.centerYAnchor constraintEqualToAnchor:cell.contentView.centerYAnchor],
+            [name.topAnchor constraintGreaterThanOrEqualToAnchor:cell.contentView.topAnchor constant:8],
+            [name.bottomAnchor constraintLessThanOrEqualToAnchor:cell.contentView.bottomAnchor constant:-8],
+        ]];
+    }
+    NSDictionary *app = self.matches[path.item];
+    name.text = app[@"name"];
+    icon.image = [POApplicationHelper imageForBundleId:app[@"bundle"]];
+    cell.isAccessibilityElement = YES;
+    cell.accessibilityLabel = app[@"name"];
+    cell.accessibilityTraits = UIAccessibilityTraitButton;
     return cell;
 }
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
-    if (self.selection) self.selection(self.matches[path.row][@"bundle"]);
+- (void)collectionView:(UICollectionView *)collectionView didSelectItemAtIndexPath:(NSIndexPath *)path {
+    [self.view endEditing:YES];
+    if (self.selection) self.selection(self.matches[path.item][@"bundle"]);
 }
 @end
 
@@ -981,6 +1010,11 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     }
     oppositeHandle.frame = CGRectMake(oppositeX, oppositeY - size / 2, size, size);
     oppositeHandle.imageView.image = self.handle.imageView.image;
+    CGPoint primaryWindowPoint = [self.handle convertPoint:CGPointMake(CGRectGetMidX(self.handle.bounds), CGRectGetMidY(self.handle.bounds)) toView:self.view.window];
+    CGPoint oppositeWindowPoint = [oppositeHandle convertPoint:CGPointMake(CGRectGetMidX(oppositeHandle.bounds), CGRectGetMidY(oppositeHandle.bounds)) toView:self.view.window];
+    BOOL primaryScreenLeft = primaryWindowPoint.x < oppositeWindowPoint.x;
+    self.handle.opacityPreferenceKey = primaryScreenLeft ? @"leftHandleOpacity" : @"rightHandleOpacity";
+    oppositeHandle.opacityPreferenceKey = primaryScreenLeft ? @"rightHandleOpacity" : @"leftHandleOpacity";
     CGFloat wheelDiameter = POCenterWheelDiameter(self.view);
     CGSize previewSize = CGSizeMake(wheelDiameter + 24, wheelDiameter + 24);
     if (!CGSizeEqualToSize(handleCenterMenu.view.bounds.size, previewSize)) {
@@ -1165,30 +1199,13 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 }
 
 -(void)showCenterMessage:(NSString *)message{
-    UILabel *status = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 320, 80)];
-    status.text = message;
-    status.numberOfLines = 0;
-    status.textAlignment = NSTextAlignmentCenter;
-    status.textColor = UIColor.secondaryLabelColor;
-    UIViewController *controller = appSearchNavigation.topViewController;
-    if ([controller isKindOfClass:POCenterMenuController.class]) {
-        ((POCenterMenuController *)controller).statusLabel.text = message;
-    } else if ([controller isKindOfClass:UITableViewController.class]) {
-        ((UITableViewController *)controller).tableView.tableFooterView = status;
-    } else {
-        status.bounds = CGRectMake(0, 0, MIN(280, CGRectGetWidth(self.view.bounds) - 24), 80);
-        status.center = CGPointMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds));
-        status.backgroundColor = UIColor.secondarySystemBackgroundColor;
-        status.layer.cornerRadius = 8;
-        status.clipsToBounds = YES;
-        status.transform = [[POApplicationHelper settings][@"leftHanded"] boolValue]
-            ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
-        status.userInteractionEnabled = NO;
-        [self.view addSubview:status];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{ [status removeFromSuperview]; });
-    }
     UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, message);
+}
+
+-(BOOL)dismissSearchForHomeGesture{
+    if (![appSearchNavigation.topViewController isKindOfClass:POAppSearchController.class]) return NO;
+    [self dismissAppSearch];
+    return YES;
 }
 
 -(BOOL)terminateUserApplication:(NSString *)bundle{
@@ -1204,7 +1221,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     NSInteger action = POCenterActionForSlot(slot);
     if (action == NSNotFound) return;
     if (action == 0) {
-        POAppSearchController *search = [[POAppSearchController alloc] initWithStyle:UITableViewStylePlain];
+        POAppSearchController *search = [[POAppSearchController alloc] init];
         __weak typeof(self) weakSelf = self;
         search.cancellation = ^{ [weakSelf dismissAppSearch]; };
         search.selection = ^(NSString *bundle) {
@@ -1561,6 +1578,10 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 
     CGPoint pointInView = [self.view convertPoint:point fromView:self.view.window];
     if (appSearchNavigation) {
+        // Leave the real Home indicator region to SpringBoard's system gesture.
+        CGFloat bottomInset = MAX(20, self.view.window.safeAreaInsets.bottom);
+        if ([appSearchNavigation.topViewController isKindOfClass:POAppSearchController.class] &&
+            point.y >= CGRectGetMaxY(self.view.window.bounds) - bottomInset) return nil;
         CGPoint searchPoint = [appSearchNavigation.view convertPoint:point fromView:self.view.window];
         return [appSearchNavigation.view hitTest:searchPoint withEvent:event];
     }

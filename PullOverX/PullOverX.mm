@@ -1210,12 +1210,25 @@ static void _logos_method$_ungrouped$SpringBoard$takeScreenshot(
 
 #pragma mark - Hardware and screen-state handling
 
+static void (*POOriginalHomeGestureSetState)(UIPanGestureRecognizer *, SEL, UIGestureRecognizerState);
+static void POHomeGestureSetState(UIPanGestureRecognizer *gesture, SEL selector, UIGestureRecognizerState state) {
+    POOriginalHomeGestureSetState(gesture, selector, state);
+    if (![POApplicationHelper isEnabled] ||
+        (state != UIGestureRecognizerStateBegan && state != UIGestureRecognizerStateChanged &&
+         state != UIGestureRecognizerStateEnded)) return;
+    CGPoint translation = [gesture translationInView:gesture.view];
+    if (translation.y < -20 && -translation.y > fabs(translation.x)) {
+        [window.controller dismissSearchForHomeGesture];
+    }
+}
+
 static void _logos_method$_ungrouped$SBHomeHardwareButton$singlePressUp$(
     _LOGOS_SELF_TYPE_NORMAL SBHomeHardwareButton *_LOGOS_SELF_CONST __unused self, SEL __unused _cmd, id arg1) {
     if (![POApplicationHelper isEnabled]) {
         _logos_orig$_ungrouped$SBHomeHardwareButton$singlePressUp$(self, _cmd, arg1);
         return;
     }
+    if ([window.controller dismissSearchForHomeGesture]) return;
     if ([window.controller isPanelActive]) {
         [window.controller close];
     } else {
@@ -1348,6 +1361,13 @@ static __attribute__((constructor)) void POInstallSpringBoardHooks(int __unused 
                             (IMP *)&_logos_orig$_ungrouped$SpringBoard$takeScreenshot);
         }
         Class _logos_class$_ungrouped$SBHomeHardwareButton = objc_getClass("SBHomeHardwareButton");
+        Class homeGestureClass = objc_getClass("SBHomeGesturePanGestureRecognizer");
+        SEL stateSelector = NSSelectorFromString(@"setState:");
+        if (homeGestureClass && [homeGestureClass isSubclassOfClass:UIPanGestureRecognizer.class] &&
+            class_getInstanceMethod(homeGestureClass, stateSelector)) {
+            MSHookMessageEx(homeGestureClass, stateSelector, (IMP)&POHomeGestureSetState,
+                (IMP *)&POOriginalHomeGestureSetState);
+        }
         {
             MSHookMessageEx(_logos_class$_ungrouped$SBHomeHardwareButton, NSSelectorFromString(@"singlePressUp:"),
                             (IMP)&_logos_method$_ungrouped$SBHomeHardwareButton$singlePressUp$,
