@@ -1043,8 +1043,9 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 
 -(void)layoutWindowControls{
     if (!primaryWindowTools) {
-        primaryWindowTools = [self windowToolsWithSymbols:@[@"arrow.clockwise", @"xmark"]
-            labels:@[@"重新加载第一窗口", @"关闭第一窗口"] selectors:@[@"reloadPrimaryWindow", @"close"]];
+        primaryWindowTools = [self windowToolsWithSymbols:@[@"arrow.up.left.and.arrow.down.right", @"arrow.clockwise", @"xmark"]
+            labels:@[@"全屏打开第一窗口", @"重新加载第一窗口", @"关闭第一窗口"]
+            selectors:@[@"fullscreenPrimaryWindow", @"reloadPrimaryWindow", @"close"]];
         secondaryWindowTools = [self windowToolsWithSymbols:@[@"arrow.up.left.and.arrow.down.right", @"arrow.left.arrow.right", @"arrow.clockwise", @"xmark"]
             labels:@[@"全屏打开第二窗口", @"交换两个窗口", @"重新加载第二窗口", @"关闭第二窗口"]
             selectors:@[@"fullscreenSecondWindow", @"swapWindows", @"reloadSecondWindow", @"closeSecondWindow"]];
@@ -1063,8 +1064,8 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     CGFloat primaryX = mirrored ? CGRectGetMinX(primary) - 24 : CGRectGetMaxX(primary) + 24;
     primaryX = MIN(MAX(primaryX, CGRectGetMinX(safe) + 22), CGRectGetMaxX(safe) - 22);
     primaryWindowTools.transform = upright;
-    primaryWindowTools.bounds = CGRectMake(0, 0, 44, 88);
-    primaryWindowTools.center = CGPointMake(primaryX, MIN(MAX(CGRectGetMinY(primary) + 50, CGRectGetMinY(safe) + 44), CGRectGetMaxY(safe) - 44));
+    primaryWindowTools.bounds = CGRectMake(0, 0, 44, 132);
+    primaryWindowTools.center = CGPointMake(primaryX, MIN(MAX(CGRectGetMinY(primary) + 72, CGRectGetMinY(safe) + 66), CGRectGetMaxY(safe) - 66));
     if (secondWindow) {
         CGFloat maximumWidth = MAX(1, MIN(primary.size.width, safe.size.width) - 48);
         CGFloat maximumHeight = MIN(primary.size.height, safe.size.height);
@@ -1084,7 +1085,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         CGFloat toolX = x + (mirrored ? -1 : 1) * (size.width / 2 + 24);
         secondaryWindowTools.center = CGPointMake(toolX, MIN(MAX(y, CGRectGetMinY(safe) + 88), CGRectGetMaxY(safe) - 88));
         if (CGRectIntersectsRect(primaryWindowTools.frame, secondaryWindowTools.frame)) {
-            primaryWindowTools.center = CGPointMake(primaryX, CGRectGetMinY(safe) + 44);
+            primaryWindowTools.center = CGPointMake(primaryX, CGRectGetMinY(safe) + 66);
             secondaryWindowTools.center = CGPointMake(toolX, CGRectGetMaxY(safe) - 88);
         }
         [self.view bringSubviewToFront:secondWindow.view];
@@ -1554,7 +1555,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 
 -(void)windowDidDoubleTap:(UITapGestureRecognizer *)recognizer{
     if (recognizer.state == UIGestureRecognizerStateRecognized) {
-        [self handle:self.handle didReceiveDoubleTap:recognizer];
+        [self fullscreenPrimaryWindow];
     }
 }
 
@@ -4105,6 +4106,10 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 }
 
 -(void)handle:(POHandle *)handle didReceiveDoubleTap:(UIGestureRecognizer *)recognizer{
+    // Consume handle double taps without launching or toggling the panel.
+}
+
+-(void)fullscreenPrimaryWindow{
     if ([self isPanelTransitioning] || panelState != POPanelStateOpen ||
         hostSession.activeBundleId.length == 0) {
         return;
