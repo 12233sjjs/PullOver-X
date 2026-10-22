@@ -1045,9 +1045,9 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     if (!primaryWindowTools) {
         primaryWindowTools = [self windowToolsWithSymbols:@[@"arrow.clockwise", @"xmark"]
             labels:@[@"重新加载第一窗口", @"关闭第一窗口"] selectors:@[@"reloadPrimaryWindow", @"close"]];
-        secondaryWindowTools = [self windowToolsWithSymbols:@[@"arrow.left.arrow.right", @"arrow.clockwise", @"xmark"]
-            labels:@[@"交换两个窗口", @"重新加载第二窗口", @"关闭第二窗口"]
-            selectors:@[@"swapWindows", @"reloadSecondWindow", @"closeSecondWindow"]];
+        secondaryWindowTools = [self windowToolsWithSymbols:@[@"arrow.up.left.and.arrow.down.right", @"arrow.left.arrow.right", @"arrow.clockwise", @"xmark"]
+            labels:@[@"全屏打开第二窗口", @"交换两个窗口", @"重新加载第二窗口", @"关闭第二窗口"]
+            selectors:@[@"fullscreenSecondWindow", @"swapWindows", @"reloadSecondWindow", @"closeSecondWindow"]];
     }
     BOOL visible = panelState == POPanelStateOpen && !keyboardZoomContainer.hidden &&
         !presentedQuickSwitchMenu && !appSearchNavigation;
@@ -1080,12 +1080,12 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         secondWindow.view.center = CGPointMake(x, y);
         [secondWindow.view setNeedsLayout];
         secondaryWindowTools.transform = upright;
-        secondaryWindowTools.bounds = CGRectMake(0, 0, 44, 132);
+        secondaryWindowTools.bounds = CGRectMake(0, 0, 44, 176);
         CGFloat toolX = x + (mirrored ? -1 : 1) * (size.width / 2 + 24);
-        secondaryWindowTools.center = CGPointMake(toolX, MIN(MAX(y, CGRectGetMinY(safe) + 66), CGRectGetMaxY(safe) - 66));
+        secondaryWindowTools.center = CGPointMake(toolX, MIN(MAX(y, CGRectGetMinY(safe) + 88), CGRectGetMaxY(safe) - 88));
         if (CGRectIntersectsRect(primaryWindowTools.frame, secondaryWindowTools.frame)) {
             primaryWindowTools.center = CGPointMake(primaryX, CGRectGetMinY(safe) + 44);
-            secondaryWindowTools.center = CGPointMake(toolX, CGRectGetMaxY(safe) - 66);
+            secondaryWindowTools.center = CGPointMake(toolX, CGRectGetMaxY(safe) - 88);
         }
         [self.view bringSubviewToFront:secondWindow.view];
         [self.view bringSubviewToFront:secondaryWindowTools];
@@ -1129,6 +1129,13 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 -(void)reloadSecondWindow{
     NSString *bundle = [secondWindow.bundleId copy];
     if (bundle) [secondWindow openBundle:bundle];
+}
+
+-(void)fullscreenSecondWindow{
+    if (panelState != POPanelStateOpen || [self isPanelTransitioning]) return;
+    NSString *bundle = [secondWindow.bundleId copy];
+    if (bundle.length == 0) return;
+    [self openApplicationExternallyFromQuickSwitch:bundle];
 }
 
 -(void)reloadPrimaryWindow{

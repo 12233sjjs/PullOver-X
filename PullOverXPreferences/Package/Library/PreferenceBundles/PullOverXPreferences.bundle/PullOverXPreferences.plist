@@ -300,7 +300,7 @@
 			<key>maximumValue</key>
 			<integer>100</integer>
 			<key>increment</key>
-			<integer>5</integer>
+			<integer>1</integer>
 			<key>unit</key>
 			<string>%</string>
 		</dict>
@@ -314,7 +314,7 @@
 			<key>set</key><string>setValue:forSpecifier:</string>
 			<key>minimumValue</key><integer>0</integer>
 			<key>maximumValue</key><integer>100</integer>
-			<key>increment</key><integer>5</integer>
+			<key>increment</key><integer>1</integer>
 			<key>unit</key><string>%</string>
 		</dict>
 		<dict>
