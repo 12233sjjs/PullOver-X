@@ -566,7 +566,6 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     BOOL mirrorZoneHighlighted;
     UIView *panelBackdropView;
     UIView *quickSwitchBackdropView;
-    UITapGestureRecognizer *panelBackdropTapGestureRecognizer;
     UITapGestureRecognizer *windowDoubleTapGestureRecognizer;
     UIPanGestureRecognizer *panelBackdropPanGestureRecognizer;
     UIView *shadowView;
@@ -703,11 +702,6 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     panelBackdropView.alpha = 0;
     panelBackdropView.userInteractionEnabled = YES;
     [self.view addSubview:panelBackdropView];
-
-    panelBackdropTapGestureRecognizer = [[UITapGestureRecognizer alloc]
-        initWithTarget:self action:@selector(panelBackdropDidTap:)];
-    panelBackdropTapGestureRecognizer.delegate = self;
-    [panelBackdropView addGestureRecognizer:panelBackdropTapGestureRecognizer];
 
     panelBackdropPanGestureRecognizer = [[UIPanGestureRecognizer alloc]
         initWithTarget:self action:@selector(panelBackdropDidPan:)];
@@ -1527,15 +1521,6 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     }
 }
 
--(void)panelBackdropDidTap:(UITapGestureRecognizer *)recognizer{
-    if (recognizer.state != UIGestureRecognizerStateEnded ||
-        [self currentInteractionMode] != POInteractionModeDrawerModal ||
-        panelState != POPanelStateOpen || [self isPanelTransitioning]) {
-        return;
-    }
-    [self close];
-}
-
 -(void)panelBackdropDidPan:(UIPanGestureRecognizer *)recognizer{
     if ([self currentInteractionMode] != POInteractionModeDrawerModal &&
         recognizer.state == UIGestureRecognizerStateBegan) {
@@ -1548,10 +1533,6 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     if (gestureRecognizer == windowDoubleTapGestureRecognizer) {
         return panelState == POPanelStateOpen && ![self isPanelTransitioning] &&
             hostSession.activeBundleId.length > 0 && !appSearchNavigation;
-    }
-    if (gestureRecognizer == panelBackdropTapGestureRecognizer) {
-        return [self currentInteractionMode] == POInteractionModeDrawerModal &&
-            panelState == POPanelStateOpen && ![self isPanelTransitioning];
     }
     if (gestureRecognizer == panelBackdropPanGestureRecognizer) {
         if ([self currentInteractionMode] != POInteractionModeDrawerModal ||
