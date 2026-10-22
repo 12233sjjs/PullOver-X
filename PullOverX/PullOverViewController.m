@@ -1173,6 +1173,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         [keyWindowBeforeSearch makeKeyWindow];
     }
     keyWindowBeforeSearch = nil;
+    [self layoutWindowControls];
     [self resetAutoNubTimer];
 }
 
