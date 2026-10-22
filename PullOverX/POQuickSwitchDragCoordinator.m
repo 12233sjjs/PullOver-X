@@ -36,7 +36,7 @@
     border.path = [UIBezierPath bezierPathWithRoundedRect:_targetView.bounds cornerRadius:20].CGPath;
     [_targetView.layer addSublayer:border];
 
-    _targetImageView = [[UIImageView alloc] initWithImage:[[UIImage systemImageNamed:@"magnifyingglass"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]];
+    _targetImageView = [[UIImageView alloc] initWithImage:[[UIImage systemImageNamed:@"plus.rectangle.on.rectangle"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]];
     _targetImageView.tintColor = UIColor.whiteColor;
     _targetImageView.contentMode = UIViewContentModeScaleAspectFit;
     _targetImageView.frame = CGRectMake(0, 0, 30, 30);
@@ -47,7 +47,7 @@
     _targetLabel.textColor = UIColor.whiteColor;
     _targetLabel.textAlignment = NSTextAlignmentCenter;
     _targetLabel.numberOfLines = 2;
-    _targetLabel.text = @"Search Apps";
+    _targetLabel.text = @"第二窗口";
     _targetLabel.alpha = 0;
     [overlayView addSubview:_targetLabel];
     [self refreshLayoutDirection];
@@ -118,7 +118,7 @@
                           delay:0
                         options:(UIViewAnimationOptionCurveEaseOut | UIViewAnimationOptionBeginFromCurrentState)
                      animations:^{
-        self->_targetLabel.text = @"Search Apps";
+        self->_targetLabel.text = @"第二窗口";
         self->_targetView.transform = highlighted ? CGAffineTransformMakeScale(1.3, 1.3) : CGAffineTransformIdentity;
         self->_targetView.backgroundColor = [UIColor colorWithWhite:1 alpha:highlighted ? 0.22 : 0.08];
     } completion:nil];
@@ -147,7 +147,7 @@
         self->_targetLabel.alpha = 0;
         self->_targetView.transform = CGAffineTransformIdentity;
         self->_targetView.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
-        self->_targetLabel.text = POLocalizedString(@"Drag QuickSwitch Items\nHere To Open", @"Tweak");
+        self->_targetLabel.text = @"第二窗口";
     };
     if (!draggedIconView) {
         resetTarget();

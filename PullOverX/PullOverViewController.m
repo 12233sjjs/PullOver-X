@@ -393,7 +393,131 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
 }
 @end
 
+@interface POSecondaryWindowController : UIViewController <POHostSessionControllerDelegate>
+@property(nonatomic, strong) POHostSessionController *session;
+@property(nonatomic, strong) UIView *canvas;
+@property(nonatomic, strong) UIView *stack;
+@property(nonatomic, strong) UIView *externalStack;
+@property(nonatomic, strong) UILabel *status;
+@property(nonatomic, copy) NSString *bundleId;
+@property(nonatomic, copy) void (^failure)(NSString *);
+- (void)openBundle:(NSString *)bundle;
+- (void)stop;
+- (void)layoutHostedContent;
+@end
+
+@implementation POSecondaryWindowController
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.view.backgroundColor = UIColor.systemBackgroundColor;
+    self.view.clipsToBounds = YES;
+    self.canvas = [[UIView alloc] initWithFrame:self.view.bounds];
+    self.canvas.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [self.view addSubview:self.canvas];
+    self.status = [[UILabel alloc] initWithFrame:self.view.bounds];
+    self.status.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    self.status.textAlignment = NSTextAlignmentCenter;
+    self.status.text = @"正在打开…";
+    [self.view addSubview:self.status];
+    self.session = [[POHostSessionController alloc] initWithManager:[ContextHostManager secondaryInstance]];
+    self.session.delegate = self;
+}
+- (void)openBundle:(NSString *)bundle {
+    [self loadViewIfNeeded];
+    [self.session invalidate];
+    [self.stack removeFromSuperview];
+    [self.externalStack removeFromSuperview];
+    self.stack = nil;
+    self.externalStack = nil;
+    self.bundleId = bundle;
+    self.status.hidden = NO;
+    self.status.text = @"正在打开…";
+    [self.session activateBundleId:bundle];
+    NSUInteger generation = self.session.currentGeneration;
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 8 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        typeof(self) strongSelf = weakSelf;
+        if (strongSelf && strongSelf.session.currentGeneration == generation &&
+            strongSelf.bundleId && strongSelf.session.state != POHostSessionStateLive) {
+            [strongSelf stop];
+            if (strongSelf.failure) strongSelf.failure(@"第二窗口打开失败，请重试。");
+        }
+    });
+}
+- (void)stop {
+    [self.session invalidate];
+    [self.stack removeFromSuperview];
+    [self.externalStack removeFromSuperview];
+    self.stack = nil;
+    self.externalStack = nil;
+    self.bundleId = nil;
+}
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    self.view.layer.cornerRadius = MIN(POContentCornerRadius(), MIN(self.view.bounds.size.width, self.view.bounds.size.height) / 2);
+    [self layoutHostedContent];
+}
+- (CGSize)hostSessionPreferredSceneStackSize:(POHostSessionController *)controller {
+    CGSize screen = UIScreen.mainScreen.bounds.size;
+    BOOL landscape = UIInterfaceOrientationIsLandscape([self hostSessionPreferredHostedInterfaceOrientation:controller]);
+    CGFloat shortSide = MIN(screen.width, screen.height), longSide = MAX(screen.width, screen.height);
+    return landscape ? CGSizeMake(longSide, shortSide) : CGSizeMake(shortSide, longSide);
+}
+- (CGSize)hostSessionPreferredSystemSceneStackSize:(POHostSessionController *)controller {
+    return UIScreen.mainScreen.bounds.size;
+}
+- (UIInterfaceOrientation)hostSessionPreferredHostedInterfaceOrientation:(POHostSessionController *)controller {
+    return [POApplicationHelper preferredHostedInterfaceOrientationForBundleId:self.bundleId];
+}
+- (void)layoutHostedContent {
+    NSMutableArray *stacks = [NSMutableArray array];
+    if (self.stack) [stacks addObject:self.stack];
+    if (self.externalStack) [stacks addObject:self.externalStack];
+    for (UIView *stack in stacks) {
+        if (!stack.superview) continue;
+        CGSize source = stack.bounds.size;
+        if (source.width <= 0 || source.height <= 0) continue;
+        CGFloat scale = MIN(self.canvas.bounds.size.width / source.width, self.canvas.bounds.size.height / source.height);
+        stack.transform = CGAffineTransformMakeScale(scale, scale);
+        stack.center = CGPointMake(CGRectGetMidX(self.canvas.bounds), CGRectGetMidY(self.canvas.bounds));
+    }
+}
+- (void)hostSessionController:(POHostSessionController *)controller didPublishScene:(FBScene *)scene
+                  sceneStack:(UIView *)stack bundleId:(NSString *)bundle generation:(NSUInteger)generation {
+    if (generation != controller.currentGeneration || ![bundle isEqualToString:self.bundleId]) return;
+    if (self.stack != stack) [self.stack removeFromSuperview];
+    self.stack = stack;
+    [self.canvas insertSubview:stack atIndex:0];
+    self.status.hidden = YES;
+    [self layoutHostedContent];
+}
+- (void)hostSessionController:(POHostSessionController *)controller didPublishScene:(FBScene *)scene
+          externalSceneStack:(UIView *)stack containsKeyboardLayer:(BOOL)keyboard
+                    bundleId:(NSString *)bundle generation:(NSUInteger)generation {
+    if (generation != controller.currentGeneration || ![bundle isEqualToString:self.bundleId]) return;
+    if (self.externalStack != stack) [self.externalStack removeFromSuperview];
+    self.externalStack = stack;
+    if (stack) [self.canvas addSubview:stack];
+    [self layoutHostedContent];
+}
+- (void)hostSessionController:(POHostSessionController *)controller cannotHostFrontmostBundleId:(NSString *)bundle
+                  generation:(NSUInteger)generation {
+    [self stop];
+    if (self.failure) self.failure(@"请先让该应用退出系统前台，再打开第二窗口。");
+}
+- (void)hostSessionController:(POHostSessionController *)controller
+hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAnimationParameters:(id)parameters
+                    bundleId:(NSString *)bundle generation:(NSUInteger)generation {
+    if (generation == controller.currentGeneration) [self layoutHostedContent];
+}
+- (void)dealloc { [self.session invalidate]; }
+@end
+
 @interface PullOverViewController ()<POHostSessionControllerDelegate, UIGestureRecognizerDelegate>{
+    POSecondaryWindowController *secondWindow;
+    UIStackView *primaryWindowTools;
+    UIStackView *secondaryWindowTools;
+    NSString *pendingSecondWindowBundle;
     POHandle *oppositeHandle;
     UIView *appSearchTarget;
     POCenterMenuController *handleCenterMenu;
@@ -528,6 +652,12 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
 -(void)showAppSearch;
 -(void)dismissAppSearch;
 -(void)layoutAdditionalControls;
+-(void)layoutWindowControls;
+-(void)openSecondWindow:(NSString *)bundle;
+-(void)closeSecondWindow;
+-(void)reloadPrimaryWindow;
+-(void)reloadSecondWindow;
+-(void)swapWindows;
 -(void)performCenterAction:(NSInteger)action;
 -(void)performCenterSystemAction:(NSInteger)action;
 -(void)showCenterMessage:(NSString *)message;
@@ -764,6 +894,7 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
 }
 
 -(void)dealloc{
+    [secondWindow stop];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
@@ -862,6 +993,136 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
         appSearchNavigation.view.bounds = self.view.bounds;
         appSearchNavigation.view.center = appSearchTarget.center;
     }
+    [self layoutWindowControls];
+}
+
+-(UIStackView *)windowToolsWithSymbols:(NSArray<NSString *> *)symbols labels:(NSArray<NSString *> *)labels selectors:(NSArray<NSString *> *)selectors{
+    UIStackView *tools = [[UIStackView alloc] init];
+    tools.axis = UILayoutConstraintAxisVertical;
+    tools.distribution = UIStackViewDistributionFillEqually;
+    tools.backgroundColor = [UIColor.secondarySystemBackgroundColor colorWithAlphaComponent:0.9];
+    tools.layer.cornerRadius = 8;
+    for (NSUInteger index = 0; index < symbols.count; index++) {
+        UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+        [button setImage:[UIImage systemImageNamed:symbols[index]] forState:UIControlStateNormal];
+        button.accessibilityLabel = labels[index];
+        [button addTarget:self action:NSSelectorFromString(selectors[index]) forControlEvents:UIControlEventTouchUpInside];
+        [tools addArrangedSubview:button];
+    }
+    [self.view addSubview:tools];
+    return tools;
+}
+
+-(void)layoutWindowControls{
+    if (!primaryWindowTools) {
+        primaryWindowTools = [self windowToolsWithSymbols:@[@"arrow.clockwise", @"xmark"]
+            labels:@[@"重新加载第一窗口", @"关闭第一窗口"] selectors:@[@"reloadPrimaryWindow", @"close"]];
+        secondaryWindowTools = [self windowToolsWithSymbols:@[@"arrow.left.arrow.right", @"arrow.clockwise", @"xmark"]
+            labels:@[@"交换两个窗口", @"重新加载第二窗口", @"关闭第二窗口"]
+            selectors:@[@"swapWindows", @"reloadSecondWindow", @"closeSecondWindow"]];
+    }
+    BOOL visible = panelState == POPanelStateOpen && !keyboardZoomContainer.hidden &&
+        !presentedQuickSwitchMenu && !appSearchNavigation;
+    primaryWindowTools.hidden = !visible;
+    secondaryWindowTools.hidden = !visible || !secondWindow;
+    if (secondWindow) secondWindow.view.hidden = !visible;
+    if (!visible) return;
+    CGRect primary = [self.contentView convertRect:self.contentView.bounds toView:self.view];
+    CGRect safe = UIEdgeInsetsInsetRect(self.view.bounds, self.view.safeAreaInsets);
+    if (CGRectIsEmpty(primary) || CGRectIsEmpty(safe)) return;
+    BOOL mirrored = [[POApplicationHelper settings][@"leftHanded"] boolValue];
+    CGAffineTransform upright = mirrored ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
+    CGFloat primaryX = mirrored ? CGRectGetMinX(primary) - 24 : CGRectGetMaxX(primary) + 24;
+    primaryX = MIN(MAX(primaryX, CGRectGetMinX(safe) + 22), CGRectGetMaxX(safe) - 22);
+    primaryWindowTools.transform = upright;
+    primaryWindowTools.bounds = CGRectMake(0, 0, 44, 88);
+    primaryWindowTools.center = CGPointMake(primaryX, MIN(MAX(CGRectGetMinY(primary) + 50, CGRectGetMinY(safe) + 44), CGRectGetMaxY(safe) - 44));
+    if (secondWindow) {
+        CGFloat value = [[POApplicationHelper settings][@"secondWindowSize"] doubleValue];
+        CGFloat ratio = isfinite(value) ? MIN(MAX(round(value), 0), 100) / 100.0 : 0.6;
+        CGFloat maximumWidth = MAX(1, MIN(primary.size.width, safe.size.width) - 48);
+        CGFloat maximumHeight = MIN(primary.size.height, safe.size.height);
+        CGFloat fit = MIN(maximumWidth / MAX(1, primary.size.width), maximumHeight / MAX(1, primary.size.height));
+        CGSize size = CGSizeMake(primary.size.width * fit * ratio, primary.size.height * fit * ratio);
+        secondWindow.view.hidden = ratio <= 0;
+        secondWindow.view.transform = upright;
+        secondWindow.view.bounds = CGRectMake(0, 0, size.width, size.height);
+        CGFloat x = mirrored ? CGRectGetMaxX(primary) - size.width / 2 : CGRectGetMinX(primary) + size.width / 2;
+        x = MIN(MAX(x, CGRectGetMinX(safe) + size.width / 2 + (mirrored ? 48 : 0)),
+                CGRectGetMaxX(safe) - size.width / 2 - (mirrored ? 0 : 48));
+        CGFloat y = MIN(MAX(CGRectGetMidY(primary) + primary.size.height * 0.12, CGRectGetMinY(safe) + size.height / 2), CGRectGetMaxY(safe) - size.height / 2);
+        secondWindow.view.center = CGPointMake(x, y);
+        [secondWindow.view setNeedsLayout];
+        secondaryWindowTools.transform = upright;
+        secondaryWindowTools.bounds = CGRectMake(0, 0, 44, 132);
+        CGFloat toolX = x + (mirrored ? -1 : 1) * (size.width / 2 + 24);
+        secondaryWindowTools.center = CGPointMake(toolX, MIN(MAX(y, CGRectGetMinY(safe) + 66), CGRectGetMaxY(safe) - 66));
+        if (CGRectIntersectsRect(primaryWindowTools.frame, secondaryWindowTools.frame)) {
+            primaryWindowTools.center = CGPointMake(primaryX, CGRectGetMinY(safe) + 44);
+            secondaryWindowTools.center = CGPointMake(toolX, CGRectGetMaxY(safe) - 66);
+        }
+        [self.view bringSubviewToFront:secondWindow.view];
+        [self.view bringSubviewToFront:secondaryWindowTools];
+    }
+    [self.view bringSubviewToFront:primaryWindowTools];
+}
+
+-(void)openSecondWindow:(NSString *)bundle{
+    if (![POApplicationHelper isUserFacingApplicationBundleId:bundle] || panelState == POPanelStateClosed) return;
+    if ([bundle isEqualToString:hostSession.activeBundleId] || [bundle isEqualToString:pinnedBundleId]) {
+        [self showCenterMessage:@"该应用已在第一窗口中打开。"]; return;
+    }
+    if ([bundle isEqualToString:[POApplicationHelper frontMostBundleId]]) {
+        [self showCenterMessage:@"请先让该应用退出系统前台，再打开第二窗口。"]; return;
+    }
+    [self dismissAppSearch];
+    [self dismissPresentedQuickSwitchMenuImmediately];
+    [self closeSecondWindow];
+    secondWindow = [[POSecondaryWindowController alloc] init];
+    __weak typeof(self) weakSelf = self;
+    secondWindow.failure = ^(NSString *message) {
+        [weakSelf closeSecondWindow];
+        [weakSelf showCenterMessage:message];
+    };
+    [self addChildViewController:secondWindow];
+    [self.view addSubview:secondWindow.view];
+    [secondWindow didMoveToParentViewController:self];
+    [self layoutWindowControls];
+    [secondWindow openBundle:bundle];
+}
+
+-(void)closeSecondWindow{
+    [secondWindow stop];
+    [secondWindow willMoveToParentViewController:nil];
+    [secondWindow.view removeFromSuperview];
+    [secondWindow removeFromParentViewController];
+    secondWindow = nil;
+    secondaryWindowTools.hidden = YES;
+}
+
+-(void)reloadSecondWindow{
+    NSString *bundle = [secondWindow.bundleId copy];
+    if (bundle) [secondWindow openBundle:bundle];
+}
+
+-(void)reloadPrimaryWindow{
+    NSString *first = [hostSession.activeBundleId copy] ?: [pinnedBundleId copy];
+    NSString *second = [secondWindow.bundleId copy];
+    if (!first) return;
+    [self forceCloseAndReleaseImmediately];
+    [hostSession invalidate];
+    pendingSecondWindowBundle = second;
+    [self pinAppWithBundleId:first];
+}
+
+-(void)swapWindows{
+    NSString *first = [hostSession.activeBundleId copy] ?: [pinnedBundleId copy];
+    NSString *second = [secondWindow.bundleId copy];
+    if (!first || !second) return;
+    [self forceCloseAndReleaseImmediately];
+    [hostSession invalidate];
+    pendingSecondWindowBundle = first;
+    [self pinAppWithBundleId:second];
 }
 
 -(void)dismissAppSearch{
@@ -1210,6 +1471,7 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
 }
 
 -(void)updateInteractionBackdropsAnimated:(BOOL)animated{
+    [self layoutWindowControls];
     oppositeHandle.hidden = panelState != POPanelStateClosed;
     if (!panelBackdropView || !quickSwitchBackdropView || !scrollView) {
         return;
@@ -1301,6 +1563,16 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     if (appSearchNavigation) {
         CGPoint searchPoint = [appSearchNavigation.view convertPoint:point fromView:self.view.window];
         return [appSearchNavigation.view hitTest:searchPoint withEvent:event];
+    }
+    NSMutableArray *surfaces = [NSMutableArray array];
+    if (secondaryWindowTools) [surfaces addObject:secondaryWindowTools];
+    if (primaryWindowTools) [surfaces addObject:primaryWindowTools];
+    if (secondWindow) [surfaces addObject:secondWindow.view];
+    for (UIView *surface in surfaces) {
+        if (!surface.hidden && surface.superview) {
+            UIView *hit = [surface hitTest:[surface convertPoint:point fromView:self.view.window] withEvent:event];
+            if (hit) return hit;
+        }
     }
     CGPoint oppositePoint = [oppositeHandle convertPoint:point fromView:self.view.window];
     if (!oppositeHandle.hidden && [oppositeHandle pointInside:oppositePoint withEvent:event]) {
@@ -2834,6 +3106,10 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
 }
 
 -(void)finishPanelSnapToOpenState:(BOOL)shouldOpen{
+    if (!shouldOpen) {
+        pendingSecondWindowBundle = nil;
+        [self closeSecondWindow];
+    }
     scrollSnapAnimationInProgress = NO;
     interactiveHostIntentIssued = NO;
     interactiveHostResumeRequired = NO;
@@ -2913,6 +3189,11 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     }
     [self scheduleFinishPanelDragZoomIfIdle];
     [self layoutAdditionalControls];
+    if (shouldOpen && pendingSecondWindowBundle && hostSession.state == POHostSessionStateLive) {
+        NSString *bundle = pendingSecondWindowBundle;
+        pendingSecondWindowBundle = nil;
+        [self openSecondWindow:bundle];
+    }
 }
 
 -(void)preparePanelForOpenPresentationIfNeeded{
@@ -3677,6 +3958,7 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
         return;
     }
     [self dismissAppSearch];
+    if ([bundleId isEqualToString:secondWindow.bundleId]) [self closeSecondWindow];
 
     BOOL hasVisibleLivePresentation = contextView && !contextView.hidden &&
         contextView.superview == self.contentView && presentationBundleId.length > 0;
@@ -4356,7 +4638,8 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     [self hideMirrorZone];
     if (shouldOpenApp) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self pinAppWithBundleId:app.bundleIdentifier];
+            if (self->panelState == POPanelStateOpen) [self openSecondWindow:app.bundleIdentifier];
+            else [self pinAppWithBundleId:app.bundleIdentifier];
         });
     }
 }
@@ -4413,6 +4696,8 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     if (bundleId.length == 0) {
         return;
     }
+    pendingSecondWindowBundle = nil;
+    [self closeSecondWindow];
 
     NSString *activeHostedBundleId = [ContextHostManager activeHostedBundleId];
     BOOL targetIsCurrentHostedApp = activeHostedBundleId.length > 0 &&
@@ -4879,6 +5164,8 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
 }
 
 -(void)forceCloseAndReleaseImmediately{
+    pendingSecondWindowBundle = nil;
+    [self closeSecondWindow];
     deferredOpenGeneration += 1;
     [self cancelAutoNubTimer];
     scrollSnapAnimationInProgress = NO;
@@ -5257,6 +5544,12 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation
     }
 
     [self completeExternallyActivatedApplicationIfNeeded:bundleId];
+    [self layoutWindowControls];
+    if (panelState == POPanelStateOpen && pendingSecondWindowBundle) {
+        NSString *secondBundle = pendingSecondWindowBundle;
+        pendingSecondWindowBundle = nil;
+        [self openSecondWindow:secondBundle];
+    }
 }
 
 -(void)hostSessionController:(POHostSessionController *)controller

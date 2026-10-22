@@ -40,6 +40,7 @@ hostedPresentationContentDidBecomeUnavailableForBundleId:(NSString *)bundleId
 @property (nonatomic, readonly) UIInterfaceOrientation hostedInterfaceOrientation;
 @property (nonatomic, assign) UIInterfaceOrientation presentationInterfaceOrientation;
 + (instancetype)sharedInstance;
++ (instancetype)secondaryInstance;
 
 + (NSString *)sceneIdentityStringFromSettings:(id)settings;
 + (NSString *)privateSceneIdentityStringFromSettings:(id)settings;

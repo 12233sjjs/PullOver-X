@@ -848,6 +848,17 @@ static BOOL POMainLayerIdentitiesEqual(NSArray<FBSceneLayer *> *lhs,
     return sharedInstance;
 }
 
++ (instancetype)secondaryInstance {
+    static ContextHostManager *manager;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{ manager = [ContextHostManager new]; });
+    return manager;
+}
+
++ (NSArray<ContextHostManager *> *)hostingManagers {
+    return @[[self sharedInstance], [self secondaryInstance]];
+}
+
 - (void)setPresentationInterfaceOrientation:(UIInterfaceOrientation)orientation {
     _presentationInterfaceOrientation = orientation;
     if (NSProcessInfo.processInfo.operatingSystemVersion.majorVersion < 26 ||
@@ -1026,15 +1037,11 @@ static BOOL POMainLayerIdentitiesEqual(NSArray<FBSceneLayer *> *lhs,
         [identifier isEqualToString:splitSession.baseSceneIdentifier]) {
         return YES;
     }
-    ContextHostManager *manager = [self sharedInstance];
-    if (!manager.isForegroundLeaseActive) {
-        return NO;
+    for (ContextHostManager *manager in [self hostingManagers]) {
+        if (manager.isForegroundLeaseActive && manager.hostedBundleId.length > 0 &&
+            POSceneIdentifierMatchesBundleIdentifier(identifier, manager.hostedBundleId)) return YES;
     }
-    NSString *bundleId = manager.hostedBundleId;
-    if (bundleId.length == 0) {
-        return NO;
-    }
-    return POSceneIdentifierMatchesBundleIdentifier(identifier, bundleId);
+    return NO;
 }
 
 + (BOOL)shouldKeepForegroundForScene:(FBScene *)scene{
@@ -1045,12 +1052,8 @@ static BOOL POMainLayerIdentitiesEqual(NSArray<FBSceneLayer *> *lhs,
     if (splitSession.baseSceneRequiresForegroundProtection && [splitSession matchesBaseScene:scene]) {
         return YES;
     }
-    ContextHostManager *manager = [self sharedInstance];
-    if (!manager.isForegroundLeaseActive) {
-        return NO;
-    }
-    if (manager.hostedScene == scene) {
-        return YES;
+    for (ContextHostManager *manager in [self hostingManagers]) {
+        if (manager.isForegroundLeaseActive && manager.hostedScene == scene) return YES;
     }
     NSString *identifier = nil;
     if ([scene respondsToSelector:@selector(identifier)]) {
@@ -1061,6 +1064,9 @@ static BOOL POMainLayerIdentitiesEqual(NSArray<FBSceneLayer *> *lhs,
 
 + (id)prepareNativeSceneSettingsIfNeeded:(id)settings forScene:(FBScene *)scene {
     ContextHostManager *manager = [self sharedInstance];
+    for (ContextHostManager *candidate in [self hostingManagers]) {
+        if (candidate.ownedHostedScene == scene) { manager = candidate; break; }
+    }
     if (!settings || !scene || manager.isForegroundLeaseActive ||
         scene != manager.ownedHostedScene || manager.ownedHostedBundleId.length == 0) {
         return settings;
@@ -1105,6 +1111,12 @@ static BOOL POMainLayerIdentitiesEqual(NSArray<FBSceneLayer *> *lhs,
 
 + (id)primePendingSceneRemnantSettings:(id)settings remnant:(id)remnant {
     ContextHostManager *manager = [self sharedInstance];
+    NSString *identity = [self sceneIdentityStringFromSettings:settings] ?: [self privateSceneIdentityStringFromSettings:settings];
+    for (ContextHostManager *candidate in [self hostingManagers]) {
+        NSString *pending = candidate.pendingRemnantReconnectBundleId;
+        if (pending.length && (POSceneIdentifierMatchesBundleIdentifier(identity, pending) ||
+            POObjectShallowGraphMentionsBundleIdentifier(remnant, pending))) { manager = candidate; break; }
+    }
     NSString *bundleId = manager.pendingRemnantReconnectBundleId;
     if (!settings || !remnant || bundleId.length == 0) {
         return settings;
@@ -1151,6 +1163,11 @@ static BOOL POMainLayerIdentitiesEqual(NSArray<FBSceneLayer *> *lhs,
 
 + (void)completePendingSceneRemnantReconnect:(FBScene *)scene {
     ContextHostManager *manager = [self sharedInstance];
+    NSString *identity = [scene respondsToSelector:@selector(identifier)] ? [scene identifier] : nil;
+    for (ContextHostManager *candidate in [self hostingManagers]) {
+        NSString *pending = candidate.remnantReconnectClaimBundleId;
+        if (pending.length && POSceneIdentifierMatchesBundleIdentifier(identity, pending)) { manager = candidate; break; }
+    }
     NSString *bundleId = manager.remnantReconnectClaimBundleId;
     if (bundleId.length == 0) {
         return;
@@ -1183,6 +1200,9 @@ static BOOL POMainLayerIdentitiesEqual(NSArray<FBSceneLayer *> *lhs,
 
 + (void)reconcileHostedInterfaceOrientationInSettings:(id)settings forScene:(FBScene *)scene {
     ContextHostManager *manager = [self sharedInstance];
+    for (ContextHostManager *candidate in [self hostingManagers]) {
+        if (candidate.isForegroundLeaseActive && candidate.hostedScene == scene) { manager = candidate; break; }
+    }
     if (!manager.isForegroundLeaseActive || scene != manager.hostedScene) {
         return;
     }
@@ -2005,8 +2025,12 @@ static BOOL POMainLayerIdentitiesEqual(NSArray<FBSceneLayer *> *lhs,
     }
     BOOL ownsScene = scene && scene == self.ownedHostedScene;
     int ownedProcessPID = ownsScene ? self.ownedHostedProcessPID : 0;
-    POSetCameraForegroundGrantBundleIdentifier(nil);
     self.foregroundLeaseActive = NO;
+    NSString *remainingCameraBundle = nil;
+    for (ContextHostManager *manager in [ContextHostManager hostingManagers]) {
+        if (manager != self && manager.isForegroundLeaseActive) remainingCameraBundle = manager.hostedBundleId;
+    }
+    POSetCameraForegroundGrantBundleIdentifier(remainingCameraBundle);
     self.activeLeaseGeneration = 0;
     [self releaseProcessAssertion];
     [self stopObservingLayerManager];
