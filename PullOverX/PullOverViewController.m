@@ -1221,6 +1221,20 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     NSInteger action = POCenterActionForSlot(slot);
     if (action == NSNotFound) return;
     if (action == 0) {
+        [self showApplicationLibrary];
+        return;
+    }
+    [self performResolvedCenterAction:action];
+}
+
+-(void)quickSwitchTableViewDidRequestSearch:(UIView<POQuickSwitchMenuPresenting> *)menu{
+    [self cancelQuickSwitchPrewarm];
+    [self showApplicationLibrary];
+}
+
+-(void)showApplicationLibrary{
+        if (!appSearchNavigation) [self showAppSearch];
+        if (!appSearchNavigation) return;
         POAppSearchController *search = [[POAppSearchController alloc] init];
         __weak typeof(self) weakSelf = self;
         search.cancellation = ^{ [weakSelf dismissAppSearch]; };
@@ -1232,8 +1246,9 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         handleSearchPreview.hidden = YES;
         [appSearchNavigation setNavigationBarHidden:NO animated:NO];
         [appSearchNavigation setViewControllers:@[search] animated:NO];
-        return;
-    }
+}
+
+-(void)performResolvedCenterAction:(NSInteger)action{
     [self dismissAppSearch];
     if (action == 1) {
         id controllerClass = NSClassFromString(@"SBMediaController");

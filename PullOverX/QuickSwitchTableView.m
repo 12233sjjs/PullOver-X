@@ -47,6 +47,10 @@
     return [self entryWithKind:POQuickSwitchEntryKindNextPage bundleIdentifier:nil];
 }
 
++ (instancetype)searchEntry{
+    return [self entryWithKind:POQuickSwitchEntryKindSearch bundleIdentifier:nil];
+}
+
 @end
 
 @interface UIFeedbackGenerator (POPrivateConfiguration)
@@ -317,7 +321,7 @@ NSArray<NSArray<POQuickSwitchEntry *> *> *POQuickSwitchBuildPages(
     if (entry.kind == POQuickSwitchEntryKindApplication) {
         return [POApplicationHelper imageForBundleId:entry.bundleIdentifier];
     }
-    NSString *symbolName = entry.kind == POQuickSwitchEntryKindPreviousPage
+    NSString *symbolName = entry.kind == POQuickSwitchEntryKindSearch ? @"magnifyingglass.circle" : entry.kind == POQuickSwitchEntryKindPreviousPage
         ? @"chevron.up.circle"
         : @"chevron.down.circle";
     UIImageSymbolConfiguration *configuration =
@@ -643,7 +647,9 @@ NSArray<NSArray<POQuickSwitchEntry *> *> *POQuickSwitchBuildPages(
         [self.selectionDelegate quickSwitchTableView:self didHoverBundleId:entry.bundleIdentifier];
     } else {
         [self.selectionDelegate quickSwitchTableViewDidClearHover:self];
-        [self schedulePageTurnForEntry:entry atRow:indexPath.row];
+        if (entry.kind != POQuickSwitchEntryKindSearch) {
+            [self schedulePageTurnForEntry:entry atRow:indexPath.row];
+        }
     }
 }
 
@@ -661,10 +667,6 @@ NSArray<NSArray<POQuickSwitchEntry *> *> *POQuickSwitchBuildPages(
         [self resetPagingInteraction];
         [self refresh];
         presentingHandleHeight = MAX(0, CGRectGetHeight(handle.bounds));
-        if (allBundleIdentifiers.count == 0) {
-            isPresenting = NO;
-            return NO;
-        }
 
         lastHoveredIndexPath = nil;
         draggingApp = nil;
@@ -683,9 +685,17 @@ NSArray<NSArray<POQuickSwitchEntry *> *> *POQuickSwitchBuildPages(
         slotCount = screenSlotCount;
         NSUInteger applicationSlotLimit = (NSUInteger)MAX(1,
             [settings[@"quickSwitchAppSlots"] integerValue]);
-        pages = POQuickSwitchBuildPages(allBundleIdentifiers,
+        NSArray *applicationPages = POQuickSwitchBuildPages(allBundleIdentifiers,
                                         applicationSlotLimit,
-                                        slotCount);
+                                        slotCount > 0 ? slotCount - 1 : 0);
+        NSMutableArray *searchPages = [NSMutableArray array];
+        for (NSArray *page in applicationPages) {
+            [searchPages addObject:[@[[POQuickSwitchEntry searchEntry]] arrayByAddingObjectsFromArray:page]];
+        }
+        if (searchPages.count == 0 && slotCount > 0) {
+            [searchPages addObject:@[[POQuickSwitchEntry searchEntry]]];
+        }
+        pages = searchPages;
         if (pages.count == 0) {
             isPresenting = NO;
             return NO;
@@ -721,6 +731,12 @@ NSArray<NSArray<POQuickSwitchEntry *> *> *POQuickSwitchBuildPages(
     } else if (recognizer.state == UIGestureRecognizerStateEnded) {
         NSIndexPath *indexPath = [self indexPathForRowAtPoint:point];
         POQuickSwitchEntry *entry = [self entryAtIndexPath:indexPath];
+        if (!draggingApp && entry && entry.kind == POQuickSwitchEntryKindSearch &&
+            CGRectContainsPoint(self.bounds, point)) {
+            [self dismissImmediately];
+            [self.selectionDelegate quickSwitchTableViewDidRequestSearch:self];
+            return YES;
+        }
         if (draggingApp) {
             [self.selectionDelegate quickSwitchTableView:self didDropApp:draggingApp atPoint:point];
         } else if (!pageTransitionInProgress && entry.kind == POQuickSwitchEntryKindApplication &&
@@ -740,6 +756,14 @@ NSArray<NSArray<POQuickSwitchEntry *> *> *POQuickSwitchBuildPages(
 }
 
 #pragma mark - TableView
+
+-(void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath{
+    POQuickSwitchEntry *entry = [self entryAtIndexPath:indexPath];
+    if (entry && entry.kind == POQuickSwitchEntryKindSearch) {
+        [self dismissImmediately];
+        [self.selectionDelegate quickSwitchTableViewDidRequestSearch:self];
+    }
+}
 
 -(NSInteger)numberOfSectionsInTableView:(UITableView *)tableView{
     return 1;
@@ -768,7 +792,8 @@ NSArray<NSArray<POQuickSwitchEntry *> *> *POQuickSwitchBuildPages(
     cell.isAccessibilityElement = entry && entry.kind != POQuickSwitchEntryKindApplication;
     cell.accessibilityLabel = entry && entry.kind == POQuickSwitchEntryKindPreviousPage
         ? @"上一页"
-        : (entry && entry.kind == POQuickSwitchEntryKindNextPage ? @"下一页" : nil);
+        : (entry && entry.kind == POQuickSwitchEntryKindNextPage ? @"下一页" :
+           (entry && entry.kind == POQuickSwitchEntryKindSearch ? @"搜索任意应用" : nil));
     [self resetCellImmediately:cell];
     return cell;
 }

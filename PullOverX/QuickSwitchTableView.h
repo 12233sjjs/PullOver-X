@@ -16,6 +16,7 @@ typedef NS_ENUM(NSUInteger, POQuickSwitchEntryKind) {
     POQuickSwitchEntryKindApplication,
     POQuickSwitchEntryKindPreviousPage,
     POQuickSwitchEntryKindNextPage,
+    POQuickSwitchEntryKindSearch,
 };
 
 @interface POQuickSwitchEntry : NSObject
@@ -24,6 +25,7 @@ typedef NS_ENUM(NSUInteger, POQuickSwitchEntryKind) {
 + (instancetype)applicationEntryWithBundleIdentifier:(NSString *)bundleIdentifier;
 + (instancetype)previousPageEntry;
 + (instancetype)nextPageEntry;
++ (instancetype)searchEntry;
 @end
 
 FOUNDATION_EXPORT NSArray<NSArray<POQuickSwitchEntry *> *> *POQuickSwitchBuildPages(
@@ -47,6 +49,7 @@ FOUNDATION_EXPORT NSArray<NSArray<POQuickSwitchEntry *> *> *POQuickSwitchBuildPa
 
 @protocol QuickSwitchSelectionDelegate <NSObject>
 @required
+-(void)quickSwitchTableViewDidRequestSearch:(UIView<POQuickSwitchMenuPresenting> *)quickSwitchTableView;
 -(void)quickSwitchTableViewWillAppear:(UIView<POQuickSwitchMenuPresenting> *)quickSwitchTableView;
 -(void)quickSwitchTableView:(UIView<POQuickSwitchMenuPresenting> *)quickSwitchTableView didHoverBundleId:(NSString *)bundleId;
 -(void)quickSwitchTableViewDidClearHover:(UIView<POQuickSwitchMenuPresenting> *)quickSwitchTableView;
