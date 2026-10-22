@@ -90,7 +90,7 @@
 }
 
 -(BOOL)usesNubbedPresentation{
-    return self.layoutMode == POHandleLayoutModeVerticalRail && self.isNubbed;
+    return (self.layoutMode == POHandleLayoutModeVerticalRail || self.nubsToNearestEdge) && self.isNubbed;
 }
 
 -(CGFloat)nubbedOriginX{
@@ -99,6 +99,9 @@
         containerWidth = 50.0;
     }
     CGFloat visibleWidth = CGRectGetWidth(self.bounds) * (1.0 - [self nubHiddenPercentage] / 100.0);
+    if (self.nubsToNearestEdge && self.restingOriginX + CGRectGetWidth(self.bounds) / 2 < containerWidth / 2) {
+        return visibleWidth - CGRectGetWidth(self.bounds);
+    }
     return containerWidth - visibleWidth;
 }
 
@@ -183,7 +186,7 @@
 
 -(void)setIsNubbed:(BOOL)isNubbed{
     _isNubbed = isNubbed;
-    [[NSUserDefaults standardUserDefaults] setBool:isNubbed forKey:@"isNubbed"];
+    if (!self.nubsToNearestEdge) [[NSUserDefaults standardUserDefaults] setBool:isNubbed forKey:@"isNubbed"];
     [self applyCurrentPresentationAnimated:YES];
 }
 

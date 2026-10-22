@@ -31,6 +31,7 @@ typedef NS_ENUM(NSUInteger, POHandleLayoutMode) {
 @property (nonatomic) BOOL allowsVerticalMovement;
 @property (nonatomic, copy) NSString *opacityPreferenceKey;
 @property (nonatomic) BOOL forceOpaque;
+@property (nonatomic) BOOL nubsToNearestEdge;
 
 -(instancetype)initWithController:(id)controller;
 -(void)refreshHandleSizeAnimated:(BOOL)animated;

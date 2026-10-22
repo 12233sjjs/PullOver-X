@@ -851,6 +851,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 
     oppositeHandle = [[POHandle alloc] initWithController:self];
     oppositeHandle.delegate = self;
+    oppositeHandle.nubsToNearestEdge = YES;
     oppositeHandle.allowsVerticalMovement = YES;
     self.handle.allowsVerticalMovement = YES;
     oppositeHandle.layoutMode = POHandleLayoutModeLandscapeFixedBottomLeft;
@@ -1003,6 +1004,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
                      forKey:@"oppositeHandleVerticalRatio"];
     }
     oppositeHandle.frame = CGRectMake(oppositeX, oppositeY - size / 2, size, size);
+    [oppositeHandle refreshNubbedPositionAnimated:NO];
     oppositeHandle.imageView.image = self.handle.imageView.image;
     CGPoint primaryWindowPoint = [self.handle convertPoint:CGPointMake(CGRectGetMidX(self.handle.bounds), CGRectGetMidY(self.handle.bounds)) toView:self.view.window];
     CGPoint oppositeWindowPoint = [oppositeHandle convertPoint:CGPointMake(CGRectGetMidX(oppositeHandle.bounds), CGRectGetMidY(oppositeHandle.bounds)) toView:self.view.window];
@@ -4138,6 +4140,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 
 -(void)handle:(POHandle *)handle didPanPanel:(UIPanGestureRecognizer *)recognizer{
     if (recognizer.state == UIGestureRecognizerStateBegan) {
+        if (handle == oppositeHandle && handle.isNubbed) handle.isNubbed = NO;
         CGPoint velocity = [recognizer velocityInView:self.view];
         draggingHandleVertically = fabs(velocity.y) > fabs(velocity.x);
         handleDragStartY = [handle.superview convertPoint:handle.center toView:self.view].y;
@@ -4795,6 +4798,9 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 
     [[POExternalActivationCoordinator sharedInstance] allowNativeActivationForBundleId:bundleId];
     [self forceCloseAndReleaseImmediately];
+    [self cancelAutoNubTimer];
+    self.handle.isNubbed = YES;
+    oppositeHandle.isNubbed = YES;
     [[UIApplication sharedApplication] launchApplicationWithIdentifier:bundleId suspended:NO];
 }
 
