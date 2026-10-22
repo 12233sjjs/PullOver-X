@@ -4106,7 +4106,10 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 }
 
 -(void)handle:(POHandle *)handle didReceiveDoubleTap:(UIGestureRecognizer *)recognizer{
-    // Consume handle double taps without launching or toggling the panel.
+    if (recognizer.state != UIGestureRecognizerStateRecognized ||
+        ![self isPanelFullyClosedAndIdle] || [self isPanelTransitioning] ||
+        appSearchNavigation || presentedQuickSwitchMenu || pinnedBundleId.length == 0) return;
+    [self openApplicationExternallyFromQuickSwitch:[pinnedBundleId copy]];
 }
 
 -(void)fullscreenPrimaryWindow{
