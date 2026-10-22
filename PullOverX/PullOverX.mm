@@ -1212,14 +1212,13 @@ static void _logos_method$_ungrouped$SpringBoard$takeScreenshot(
 
 static void (*POOriginalHomeGestureSetState)(UIPanGestureRecognizer *, SEL, UIGestureRecognizerState);
 static void POHomeGestureSetState(UIPanGestureRecognizer *gesture, SEL selector, UIGestureRecognizerState state) {
-    POOriginalHomeGestureSetState(gesture, selector, state);
-    if (![POApplicationHelper isEnabled] ||
-        (state != UIGestureRecognizerStateBegan && state != UIGestureRecognizerStateChanged &&
-         state != UIGestureRecognizerStateEnded)) return;
-    CGPoint translation = [gesture translationInView:gesture.view];
-    if (translation.y < -20 && -translation.y > fabs(translation.x)) {
-        [window.controller dismissSearchForHomeGesture];
+    // Consume this Home gesture before SpringBoard begins a foreground transition.
+    if (state == UIGestureRecognizerStateBegan && [POApplicationHelper isEnabled] &&
+        [window.controller dismissSearchForHomeGesture]) {
+        POOriginalHomeGestureSetState(gesture, selector, UIGestureRecognizerStateFailed);
+        return;
     }
+    POOriginalHomeGestureSetState(gesture, selector, state);
 }
 
 static void _logos_method$_ungrouped$SBHomeHardwareButton$singlePressUp$(
