@@ -2456,10 +2456,9 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     if (CGRectGetWidth(keyboardZoomBaseFrame) <= 0 || CGRectGetHeight(keyboardZoomBaseFrame) <= 0) {
         return 1.0;
     }
-    CGRect baseFrameInView = [scrollView convertRect:keyboardZoomBaseFrame toView:self.view];
-    CGFloat leadingLimit = [self leadingSafeAreaInset] + CONTENT_EDGE_GAP +
-        CGRectGetWidth(self.handle.bounds) + HANDLE_EDGE_GAP;
-    CGFloat availableWidth = CGRectGetMaxX(baseFrameInView) - leadingLimit;
+    CGFloat availableWidth = CGRectGetWidth(self.view.bounds) -
+        [self leadingSafeAreaInset] - [self trailingSafeAreaInset] -
+        CGRectGetWidth(self.handle.bounds) - CONTENT_EDGE_GAP - HANDLE_EDGE_GAP;
     CGFloat maxZoomByWidth = availableWidth / CGRectGetWidth(keyboardZoomBaseFrame);
     if (!isfinite(maxZoomByWidth)) {
         return 1.0;
@@ -2530,7 +2529,12 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 }
 
 -(CGPoint)keyboardZoomTargetCenterForBaseFrame:(CGRect)baseFrame scale:(CGFloat)zoom{
-    CGPoint anchor = CGPointMake(CGRectGetMaxX(baseFrame), CGRectGetMaxY(baseFrame));
+    CGPoint anchorInView = CGPointMake(CGRectGetWidth(self.view.bounds) -
+                                            [self trailingSafeAreaInset] -
+                                            CGRectGetWidth(self.handle.bounds) - HANDLE_EDGE_GAP,
+                                        CGRectGetHeight(self.view.bounds) -
+                                            [self.view safeAreaInsets].bottom - CONTENT_EDGE_GAP);
+    CGPoint anchor = [scrollView convertPoint:anchorInView fromView:self.view];
     CGPoint targetCenter = CGPointMake(anchor.x - CGRectGetWidth(baseFrame) * zoom / 2.0,
                                         anchor.y - CGRectGetHeight(baseFrame) * zoom / 2.0);
     CGFloat screenScale = UIScreen.mainScreen.scale;
