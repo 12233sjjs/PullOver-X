@@ -2525,7 +2525,12 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     if (fabs(scaleValue - 1.0) <= PO_CARD_SCALE_EPSILON || CGRectIsEmpty(keyboardZoomBaseFrame)) {
         return 0;
     }
-    return CGRectGetWidth(keyboardZoomBaseFrame) * (1.0 - scaleValue);
+    CGPoint targetCenter = [self keyboardZoomTargetCenterForBaseFrame:keyboardZoomBaseFrame scale:scaleValue];
+    CGFloat scaledCardLeft = targetCenter.x - CGRectGetWidth(keyboardZoomBaseFrame) * scaleValue / 2.0;
+    CGFloat scaledHandleX = scaledCardLeft - HANDLE_EDGE_GAP - CGRectGetWidth(self.handle.bounds);
+    CGFloat baseHandleX = handleScrollView.center.x - CGRectGetWidth(handleScrollView.bounds) / 2.0 +
+        CGRectGetMinX(self.handle.frame);
+    return scaledHandleX - baseHandleX;
 }
 
 -(CGPoint)keyboardZoomTargetCenterForBaseFrame:(CGRect)baseFrame scale:(CGFloat)zoom{
@@ -2535,6 +2540,10 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
                                         CGRectGetHeight(self.view.bounds) -
                                             [self.view safeAreaInsets].bottom - CONTENT_EDGE_GAP);
     CGPoint anchor = [scrollView convertPoint:anchorInView fromView:self.view];
+    CGFloat minimumLeft = [scrollView convertPoint:CGPointMake([self leadingSafeAreaInset] +
+        CONTENT_EDGE_GAP + CGRectGetWidth(self.handle.bounds) + HANDLE_EDGE_GAP, 0)
+        fromView:self.view].x;
+    anchor.x = MAX(anchor.x, minimumLeft + CGRectGetWidth(baseFrame) * zoom);
     CGPoint targetCenter = CGPointMake(anchor.x - CGRectGetWidth(baseFrame) * zoom / 2.0,
                                         anchor.y - CGRectGetHeight(baseFrame) * zoom / 2.0);
     CGFloat screenScale = UIScreen.mainScreen.scale;
