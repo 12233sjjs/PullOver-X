@@ -382,6 +382,9 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
         if (!POExternalIsUserApplicationBundleIdentifier(targetBundleId)) {
             return completion;
         }
+        if ([targetBundleId isEqualToString:[POApplicationHelper frontMostBundleId]]) {
+            return completion;
+        }
 
         ContextHostManager *manager = [ContextHostManager sharedInstance];
         POXWindow *pullOverWindow = (POXWindow *)[POXWindow sharedWindow];
@@ -589,6 +592,9 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
     }
 
     if (POExternalIsNotificationLaunch(origin, options)) {
+        if ([targetBundleId isEqualToString:[POApplicationHelper frontMostBundleId]]) {
+            return options;
+        }
         ContextHostManager *manager = [ContextHostManager sharedInstance];
         POXWindow *pullOverWindow = (POXWindow *)[POXWindow sharedWindow];
         NSString *hostedBundleId = [ContextHostManager activeHostedBundleId];

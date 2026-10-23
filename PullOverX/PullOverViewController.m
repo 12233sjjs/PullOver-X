@@ -5611,16 +5611,17 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation
         return;
     }
 
+    BOOL keyboardLayerBecamePresent = containsKeyboardLayer && !hostedKeyboardLayerPresent;
     hostedKeyboardLayerPresent = containsKeyboardLayer;
     if (containsKeyboardLayer &&
-        keyboardNotificationState == POKeyboardNotificationStateUnknown &&
-        !keyboardHideAnimationInFlight) {
+        (keyboardLayerBecamePresent || keyboardNotificationState == POKeyboardNotificationStateUnknown)) {
+        // Hosted keyboards may appear without a UIKit keyboard notification in SpringBoard.
         keyboardNotificationState = POKeyboardNotificationStateVisible;
         keyboardHideAnimationInFlight = NO;
+        if (keyboardLayerBecamePresent) keyboardZoomSuppressedForCurrentSession = NO;
     } else if (!containsKeyboardLayer) {
-        if (keyboardNotificationState == POKeyboardNotificationStateUnknown) {
-            keyboardNotificationState = POKeyboardNotificationStateHidden;
-        }
+        keyboardNotificationState = POKeyboardNotificationStateHidden;
+        keyboardHideAnimationInFlight = NO;
     }
 
     if (!contextView || !sceneStack) {
