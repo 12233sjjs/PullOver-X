@@ -282,6 +282,9 @@ static CGAffineTransform POOrientationTransform(UIInterfaceOrientation orientati
         [self setHidden:YES];
         self.rootViewController.view.alpha = 0;
         self.userInteractionEnabled = NO;
+        self.opaque = NO;
+        self.layer.opaque = NO;
+        self.rootViewController.view.opaque = NO;
         self.backgroundColor = [UIColor clearColor];
     }
     return self;

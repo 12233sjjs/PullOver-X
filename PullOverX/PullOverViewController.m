@@ -1950,7 +1950,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     };
     [presentationSnapshotCacheOrder removeObject:bundleId];
     [presentationSnapshotCacheOrder addObject:bundleId];
-    while (presentationSnapshotCacheOrder.count > 6) {
+    while (presentationSnapshotCacheOrder.count > 2) {
         NSString *oldestBundleId = presentationSnapshotCacheOrder.firstObject;
         [presentationSnapshotCacheOrder removeObjectAtIndex:0];
         [presentationSnapshotCache removeObjectForKey:oldestBundleId];

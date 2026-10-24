@@ -71,7 +71,7 @@
     self.backgroundColor = self.forceOpaque
         ? UIColor.secondarySystemBackgroundColor
         : [UIColor.secondarySystemBackgroundColor colorWithAlphaComponent:0.78 * opacity];
-    self.layer.shadowOpacity = (float)(0.32 * opacity);
+    self.layer.shadowOpacity = self.forceOpaque ? (float)(0.32 * opacity) : 0;
     self.imageView.alpha = opacity;
 }
 
