@@ -2484,9 +2484,8 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         ![[POApplicationHelper settings][@"landscapeKeyboardZoom"] boolValue]) {
         return NO;
     }
-    return hostedKeyboardLayerPresent &&
-        keyboardNotificationState == POKeyboardNotificationStateVisible &&
-        !keyboardHideAnimationInFlight;
+    // SpringBoard keyboard notifications can describe a different app's keyboard.
+    return hostedKeyboardLayerPresent;
 }
 
 -(CGFloat)keyboardZoomScaleForCardScaleContext:(POCardScaleContext)context{
@@ -4768,6 +4767,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 
     if (targetIsCurrentHostedApp && panelState != POPanelStateClosed) {
         [self forceCloseAndReleaseImmediately];
+        self.handle.isNubbed = YES;
         return;
     }
 
@@ -4788,6 +4788,9 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         shadowView.layer.shadowOpacity = 0;
         [self retainPresentationAfterReleaseIfPossible];
     }
+
+    [self cancelAutoNubTimer];
+    self.handle.isNubbed = YES;
 
     if (activeHostedBundleId.length == 0) {
         return;
@@ -5626,8 +5629,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation
 
     BOOL keyboardLayerBecamePresent = containsKeyboardLayer && !hostedKeyboardLayerPresent;
     hostedKeyboardLayerPresent = containsKeyboardLayer;
-    if (containsKeyboardLayer &&
-        (keyboardLayerBecamePresent || keyboardNotificationState == POKeyboardNotificationStateUnknown)) {
+    if (containsKeyboardLayer) {
         // Hosted keyboards may appear without a UIKit keyboard notification in SpringBoard.
         keyboardNotificationState = POKeyboardNotificationStateVisible;
         keyboardHideAnimationInFlight = NO;

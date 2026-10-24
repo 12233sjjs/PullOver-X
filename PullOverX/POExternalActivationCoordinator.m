@@ -383,6 +383,8 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
             return completion;
         }
         if ([targetBundleId isEqualToString:[POApplicationHelper frontMostBundleId]]) {
+            POXWindow *window = (POXWindow *)[POXWindow sharedWindow];
+            [window.controller prepareForNativeApplicationTakeover:targetBundleId];
             return completion;
         }
 
@@ -593,6 +595,8 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
 
     if (POExternalIsNotificationLaunch(origin, options)) {
         if ([targetBundleId isEqualToString:[POApplicationHelper frontMostBundleId]]) {
+            POXWindow *window = (POXWindow *)[POXWindow sharedWindow];
+            [window.controller prepareForNativeApplicationTakeover:targetBundleId];
             return options;
         }
         ContextHostManager *manager = [ContextHostManager sharedInstance];
@@ -881,9 +885,8 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
         return;
     }
 
-    BOOL hostedIsTarget = [hostedBundleId isEqualToString:targetBundleId];
     BOOL hostedIsSource = [hostedBundleId isEqualToString:sourceBundleId];
-    if (!hostedIsTarget || hostedIsSource) {
+    if (hostedIsSource) {
         return;
     }
 
