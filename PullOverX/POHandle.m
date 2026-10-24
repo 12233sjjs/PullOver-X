@@ -20,7 +20,6 @@
 
 @interface POHandle () <UIGestureRecognizerDelegate> {
     UILabel *messageLabel;
-    UIVisualEffectView *blurView;
     UITapGestureRecognizer *_tapGestureRecognizer;
     UITapGestureRecognizer *_doubleTapGestureRecognizer;
     UILongPressGestureRecognizer *quickSwitchLongPress;
@@ -69,9 +68,10 @@
 
 -(void)applyHandleOpacity{
     CGFloat opacity = [self handleOpacity];
-    self.backgroundColor = self.forceOpaque ? UIColor.secondarySystemBackgroundColor : [UIColor colorWithWhite:1 alpha:0.04 * opacity];
+    self.backgroundColor = self.forceOpaque
+        ? UIColor.secondarySystemBackgroundColor
+        : [UIColor.secondarySystemBackgroundColor colorWithAlphaComponent:0.78 * opacity];
     self.layer.shadowOpacity = (float)(0.32 * opacity);
-    blurView.alpha = opacity;
     self.imageView.alpha = opacity;
 }
 
@@ -114,14 +114,13 @@
     frame.size = CGSizeMake(size, size);
     self.frame = frame;
     self.layer.cornerRadius = [self fullCornerRadius];
+    self.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:self.bounds cornerRadius:self.layer.cornerRadius].CGPath;
 
     CGFloat iconSize = MAX(0, size - 10.0);
     self.imageView.frame = CGRectMake((CGRectGetWidth(self.bounds) - iconSize) / 2.0,
                                       (CGRectGetHeight(self.bounds) - iconSize) / 2.0,
                                       iconSize,
                                       iconSize);
-    blurView.frame = self.bounds;
-    blurView.layer.cornerRadius = [self usesNubbedPresentation] ? [self nubbedCornerRadius] : [self fullCornerRadius];
 }
 
 -(instancetype)initWithController:(id)hubController{
@@ -130,6 +129,7 @@
         [self.layer setShadowColor:[UIColor blackColor].CGColor];
         [self.layer setShadowRadius:3.5];
         [self.layer setShadowOffset:CGSizeMake(0, 0)];
+        self.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:self.bounds cornerRadius:8].CGPath;
 
         _tapGestureRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tap:)];
         _tapGestureRecognizer.delegate = self;
@@ -156,16 +156,6 @@
         [_panelPanGestureRecognizer requireGestureRecognizerToFail:quickSwitchLongPress];
         [_tapGestureRecognizer requireGestureRecognizerToFail:_panelPanGestureRecognizer];
         
-        UIBlurEffect *blur = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThinMaterial];
-        blurView = [[UIVisualEffectView alloc] initWithEffect:blur];
-        blurView.frame = self.bounds;
-        blurView.userInteractionEnabled = NO;
-        blurView.layer.cornerRadius = 8;
-        blurView.layer.cornerCurve = kCACornerCurveContinuous;
-        blurView.clipsToBounds = YES;
-        [self addSubview:blurView];
-        
-
         self.imageView = [[UIImageView alloc] initWithFrame:CGRectZero];
         [self.imageView setBackgroundColor:[UIColor clearColor]];
         self.imageView.contentMode = UIViewContentModeScaleAspectFit;
@@ -199,13 +189,14 @@
     void (^changes)(void) = ^{
         if ([self usesNubbedPresentation]) {
             [self applyNubbedPosition];
-            self->blurView.layer.cornerRadius = [self nubbedCornerRadius];
+            self.layer.cornerRadius = [self nubbedCornerRadius];
         } else {
             CGRect frame = self.frame;
             frame.origin.x = self.restingOriginX;
             self.frame = frame;
-            self->blurView.layer.cornerRadius = [self fullCornerRadius];
+            self.layer.cornerRadius = [self fullCornerRadius];
         }
+        self.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:self.bounds cornerRadius:self.layer.cornerRadius].CGPath;
     };
     if (animated) {
         [UIView animateWithDuration:0.2 delay:0
@@ -234,7 +225,7 @@
 
 -(void)layoutSubviews{
     [super layoutSubviews];
-    blurView.frame = self.bounds;
+    self.layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:self.bounds cornerRadius:self.layer.cornerRadius].CGPath;
 }
 
 -(BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event{
