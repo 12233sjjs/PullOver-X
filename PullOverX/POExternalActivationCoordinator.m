@@ -382,68 +382,12 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
         if (!POExternalIsUserApplicationBundleIdentifier(targetBundleId)) {
             return completion;
         }
-        if ([targetBundleId isEqualToString:[POApplicationHelper frontMostBundleId]]) {
-            POXWindow *window = (POXWindow *)[POXWindow sharedWindow];
-            [window.controller prepareForNativeApplicationTakeover:targetBundleId];
-            return completion;
-        }
-
-        ContextHostManager *manager = [ContextHostManager sharedInstance];
         POXWindow *pullOverWindow = (POXWindow *)[POXWindow sharedWindow];
-        NSString *hostedBundleId = [ContextHostManager activeHostedBundleId];
-        if (manager.isForegroundLeaseActive && pullOverWindow.controller.isPanelActive &&
-            hostedBundleId.length > 0 && ![hostedBundleId isEqualToString:targetBundleId]) {
-            if (!POExternalPrepareSuspendedOpenRequest(request)) {
-                return completion;
-            }
-            NSUInteger hostGeneration = manager.activeLeaseGeneration;
-            NSUInteger routeGeneration = ++self.routeRequestGeneration;
-            NSString *sourceBundleId = [hostedBundleId copy];
-            POExternalOpenCompletion originalCompletion = completion;
-            POExternalOpenCompletion routedCompletion = ^(NSError *error) {
-                if (originalCompletion) {
-                    originalCompletion(error);
-                }
-                if (error) {
-                    return;
-                }
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    ContextHostManager *currentManager = [ContextHostManager sharedInstance];
-                    if (routeGeneration != self.routeRequestGeneration ||
-                        !currentManager.isForegroundLeaseActive ||
-                        currentManager.activeLeaseGeneration != hostGeneration ||
-                        ![[ContextHostManager activeHostedBundleId] isEqualToString:sourceBundleId]) {
-                        return;
-                    }
-                    [((POXWindow *)[POXWindow sharedWindow]).controller
-                        routeExternalApplicationInsidePullOver:targetBundleId];
-                });
-            };
-            return [routedCompletion copy];
+        if (pullOverWindow.controller.isPanelActive ||
+            [targetBundleId isEqualToString:[POApplicationHelper frontMostBundleId]]) {
+            [pullOverWindow.controller prepareForNativeApplicationTakeover:targetBundleId];
         }
-
-        if (!POExternalPullOverIsStableClosed()) {
-            return completion;
-        }
-        if (![self beginNativeRouteForTargetBundleId:targetBundleId
-                                      sourceBundleId:@"com.apple.springboard.notification"]) {
-            return completion;
-        }
-        if (!POExternalPrepareSuspendedOpenRequest(request)) {
-            [self finishNativeRouteForGeneration:self.nativeRouteGeneration];
-            return completion;
-        }
-        NSUInteger nativeGeneration = self.nativeRouteGeneration;
-        POExternalOpenCompletion originalCompletion = completion;
-        POExternalOpenCompletion routedCompletion = ^(NSError *error) {
-            if (originalCompletion) {
-                originalCompletion(error);
-            }
-            [self completeNativeRouteForGeneration:nativeGeneration
-                                    targetBundleId:targetBundleId
-                                             error:error];
-        };
-        return [routedCompletion copy];
+        return completion;
     }
 
     NSURL *openURL = POExternalOpenURL(request);
@@ -594,75 +538,12 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
     }
 
     if (POExternalIsNotificationLaunch(origin, options)) {
-        if ([targetBundleId isEqualToString:[POApplicationHelper frontMostBundleId]]) {
-            POXWindow *window = (POXWindow *)[POXWindow sharedWindow];
-            [window.controller prepareForNativeApplicationTakeover:targetBundleId];
-            return options;
-        }
-        ContextHostManager *manager = [ContextHostManager sharedInstance];
         POXWindow *pullOverWindow = (POXWindow *)[POXWindow sharedWindow];
-        NSString *hostedBundleId = [ContextHostManager activeHostedBundleId];
-        if (manager.isForegroundLeaseActive && pullOverWindow.controller.isPanelActive &&
-            hostedBundleId.length > 0 && ![hostedBundleId isEqualToString:targetBundleId]) {
-            id preparedOptions = POExternalOptionsByAddingActivateSuspended(options);
-            if (!preparedOptions) {
-                return options;
-            }
-
-            NSUInteger hostGeneration = manager.activeLeaseGeneration;
-            NSUInteger routeGeneration = ++self.routeRequestGeneration;
-            NSString *sourceBundleId = [hostedBundleId copy];
-            POExternalOpenCompletion originalResult = result;
-            POExternalOpenCompletion wrappedResult = ^(NSError *error) {
-                if (originalResult) {
-                    originalResult(error);
-                }
-                if (error) {
-                    return;
-                }
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    ContextHostManager *currentManager = [ContextHostManager sharedInstance];
-                    if (routeGeneration != self.routeRequestGeneration ||
-                        !currentManager.isForegroundLeaseActive ||
-                        currentManager.activeLeaseGeneration != hostGeneration ||
-                        ![[ContextHostManager activeHostedBundleId] isEqualToString:sourceBundleId]) {
-                        return;
-                    }
-                    [((POXWindow *)[POXWindow sharedWindow]).controller
-                        routeExternalApplicationInsidePullOver:targetBundleId];
-                });
-            };
-            if (routedResult) {
-                *routedResult = [wrappedResult copy];
-            }
-            return preparedOptions;
+        if (pullOverWindow.controller.isPanelActive ||
+            [targetBundleId isEqualToString:[POApplicationHelper frontMostBundleId]]) {
+            [pullOverWindow.controller prepareForNativeApplicationTakeover:targetBundleId];
         }
-
-        if (!POExternalPullOverIsStableClosed() ||
-            ![self beginNativeRouteForTargetBundleId:targetBundleId
-                                      sourceBundleId:@"com.apple.springboard.notification"]) {
-            return options;
-        }
-
-        id preparedOptions = POExternalOptionsByAddingActivateSuspended(options);
-        if (!preparedOptions) {
-            [self finishNativeRouteForGeneration:self.nativeRouteGeneration];
-            return options;
-        }
-        NSUInteger nativeGeneration = self.nativeRouteGeneration;
-        POExternalOpenCompletion originalResult = result;
-        POExternalOpenCompletion wrappedResult = ^(NSError *error) {
-            if (originalResult) {
-                originalResult(error);
-            }
-            [self completeNativeRouteForGeneration:nativeGeneration
-                                    targetBundleId:targetBundleId
-                                             error:error];
-        };
-        if (routedResult) {
-            *routedResult = [wrappedResult copy];
-        }
-        return preparedOptions;
+        return options;
     }
 
     NSURL *openURL = POExternalURLFromOptions(options);

@@ -2484,8 +2484,11 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         ![[POApplicationHelper settings][@"landscapeKeyboardZoom"] boolValue]) {
         return NO;
     }
-    // SpringBoard keyboard notifications can describe a different app's keyboard.
-    return hostedKeyboardLayerPresent;
+    // Hosted keyboard layers may not republish during drag-open, so keep the
+    // UIKit notification state as a fallback for the hosted app's keyboard.
+    return hostedKeyboardLayerPresent ||
+        (keyboardNotificationState == POKeyboardNotificationStateVisible &&
+         !keyboardHideAnimationInFlight);
 }
 
 -(CGFloat)keyboardZoomScaleForCardScaleContext:(POCardScaleContext)context{
