@@ -12,6 +12,7 @@
 #import "POQuickSwitchMetrics.h"
 #import "POSplitSessionController.h"
 #import "QuickSwitchHorizontalBarView.h"
+#import "POXWindow.h"
 #import "../POPPath.h"
 #import "../POLocalization.h"
 #import <objc/message.h>
@@ -26,6 +27,16 @@ static CGFloat POContentCornerRadius(void) {
     CGFloat radius = value ? [value doubleValue] : 20.0;
     return isfinite(radius) ? MIN(MAX(radius, 0), 100) : 20.0;
 }
+
+static void PORemoveHostedKeyboardViews(UIView *stack) {
+    for (UIView *subview in stack.subviews) {
+        PORemoveHostedKeyboardViews(subview);
+        if ([NSStringFromClass(subview.class) isEqualToString:@"_UIKeyboardLayerHostView"]) {
+            [subview removeFromSuperview];
+        }
+    }
+}
+
 #define CONTENT_SHADOW_OPACITY 0.28
 #define CONTENT_SHADOW_FADE_DISTANCE 12.0
 #define CLOSED_CONTENT_OFFSET_EPSILON 0.5
@@ -1043,12 +1054,21 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 
 -(void)layoutWindowControls{
     if (!primaryWindowTools) {
-        primaryWindowTools = [self windowToolsWithSymbols:@[@"arrow.up.left.and.arrow.down.right", @"arrow.clockwise", @"xmark"]
-            labels:@[@"全屏打开第一窗口", @"重新加载第一窗口", @"关闭第一窗口"]
-            selectors:@[@"fullscreenPrimaryWindow", @"reloadPrimaryWindow", @"close"]];
-        secondaryWindowTools = [self windowToolsWithSymbols:@[@"arrow.up.left.and.arrow.down.right", @"arrow.left.arrow.right", @"arrow.clockwise", @"xmark"]
-            labels:@[@"全屏打开第二窗口", @"交换两个窗口", @"重新加载第二窗口", @"关闭第二窗口"]
-            selectors:@[@"fullscreenSecondWindow", @"swapWindows", @"reloadSecondWindow", @"closeSecondWindow"]];
+        primaryWindowTools = [self windowToolsWithSymbols:@[
+            @"arrow.up.left.and.arrow.down.right", @"keyboard.chevron.compact.down",
+            @"arrow.clockwise", @"rotate.right", @"xmark"]
+            labels:@[@"全屏打开第一窗口", @"取消输入", @"重新加载第一窗口",
+                     @"旋转窗口", @"关闭第一窗口"]
+            selectors:@[@"fullscreenPrimaryWindow", @"dismissHostedKeyboard",
+                        @"reloadPrimaryWindow", @"rotateHostedWindow", @"close"]];
+        secondaryWindowTools = [self windowToolsWithSymbols:@[
+            @"arrow.up.left.and.arrow.down.right", @"keyboard.chevron.compact.down",
+            @"arrow.left.arrow.right", @"arrow.clockwise", @"rotate.right", @"xmark"]
+            labels:@[@"全屏打开第二窗口", @"取消输入", @"交换两个窗口",
+                     @"重新加载第二窗口", @"旋转窗口", @"关闭第二窗口"]
+            selectors:@[@"fullscreenSecondWindow", @"dismissSecondWindowKeyboard",
+                        @"swapWindows", @"reloadSecondWindow", @"rotateHostedWindow",
+                        @"closeSecondWindow"]];
     }
     BOOL visible = panelState == POPanelStateOpen && !keyboardZoomContainer.hidden &&
         !presentedQuickSwitchMenu && !appSearchNavigation;
@@ -1063,9 +1083,24 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     CGAffineTransform upright = mirrored ? CGAffineTransformMakeScale(-1, 1) : CGAffineTransformIdentity;
     CGFloat primaryX = mirrored ? CGRectGetMinX(primary) - 24 : CGRectGetMaxX(primary) + 24;
     primaryX = MIN(MAX(primaryX, CGRectGetMinX(safe) + 22), CGRectGetMaxX(safe) - 22);
+    NSUInteger primaryCount = primaryWindowTools.arrangedSubviews.count;
+    NSUInteger secondaryCount = secondaryWindowTools.arrangedSubviews.count;
+    CGFloat itemHeight = 44.0;
+    CGFloat primaryHeight = primaryCount * itemHeight;
+    CGFloat secondaryHeight = secondaryCount * itemHeight;
+    if (safe.size.height < primaryHeight + secondaryHeight + 24.0) {
+        itemHeight = MAX(28.0, floor((safe.size.height - 24.0) /
+            (CGFloat)(primaryCount + secondaryCount)));
+        primaryHeight = primaryCount * itemHeight;
+        secondaryHeight = secondaryCount * itemHeight;
+    }
+    CGFloat primaryHalf = primaryHeight / 2.0;
     primaryWindowTools.transform = upright;
-    primaryWindowTools.bounds = CGRectMake(0, 0, 44, 132);
-    primaryWindowTools.center = CGPointMake(primaryX, MIN(MAX(CGRectGetMinY(primary) + 72, CGRectGetMinY(safe) + 66), CGRectGetMaxY(safe) - 66));
+    primaryWindowTools.bounds = CGRectMake(0, 0, 44, primaryHeight);
+    primaryWindowTools.center = CGPointMake(primaryX,
+        MIN(MAX(CGRectGetMinY(primary) + primaryHalf + 6,
+                CGRectGetMinY(safe) + primaryHalf),
+            CGRectGetMaxY(safe) - primaryHalf));
     if (secondWindow) {
         CGFloat maximumWidth = MAX(1, MIN(primary.size.width, safe.size.width) - 48);
         CGFloat maximumHeight = MIN(primary.size.height, safe.size.height);
@@ -1081,12 +1116,15 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         secondWindow.view.center = CGPointMake(x, y);
         [secondWindow.view setNeedsLayout];
         secondaryWindowTools.transform = upright;
-        secondaryWindowTools.bounds = CGRectMake(0, 0, 44, 176);
+        secondaryWindowTools.bounds = CGRectMake(0, 0, 44, secondaryHeight);
+        CGFloat secondaryHalf = secondaryHeight / 2.0;
         CGFloat toolX = x + (mirrored ? -1 : 1) * (size.width / 2 + 24);
-        secondaryWindowTools.center = CGPointMake(toolX, MIN(MAX(y, CGRectGetMinY(safe) + 88), CGRectGetMaxY(safe) - 88));
+        secondaryWindowTools.center = CGPointMake(toolX,
+            MIN(MAX(y, CGRectGetMinY(safe) + secondaryHalf),
+                CGRectGetMaxY(safe) - secondaryHalf));
         if (CGRectIntersectsRect(primaryWindowTools.frame, secondaryWindowTools.frame)) {
-            primaryWindowTools.center = CGPointMake(primaryX, CGRectGetMinY(safe) + 66);
-            secondaryWindowTools.center = CGPointMake(toolX, CGRectGetMaxY(safe) - 88);
+            primaryWindowTools.center = CGPointMake(primaryX, CGRectGetMinY(safe) + primaryHalf);
+            secondaryWindowTools.center = CGPointMake(toolX, CGRectGetMaxY(safe) - secondaryHalf);
         }
         [self.view bringSubviewToFront:secondWindow.view];
         [self.view bringSubviewToFront:secondaryWindowTools];
@@ -4149,6 +4187,48 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         return;
     }
     [self openApplicationExternallyFromQuickSwitch:[hostSession.activeBundleId copy]];
+}
+
+-(void)dismissHostedKeyboard{
+    if (panelState != POPanelStateOpen || !externalSceneStack ||
+        externalSceneStack.superview != self.contentView) {
+        return;
+    }
+    PORemoveHostedKeyboardViews(externalSceneStack);
+    if (externalSceneStack.subviews.count == 0) {
+        [externalSceneStack removeFromSuperview];
+        externalSceneStack = nil;
+    }
+    hostedKeyboardLayerPresent = NO;
+    keyboardNotificationState = POKeyboardNotificationStateHidden;
+    keyboardHideAnimationInFlight = NO;
+    [self restoreKeyboardZoomImmediately];
+    [self reevaluateKeyboardZoomAnimated:NO];
+}
+
+-(void)dismissSecondWindowKeyboard{
+    if (!secondWindow) return;
+    PORemoveHostedKeyboardViews(secondWindow.externalStack);
+    if (secondWindow.externalStack.subviews.count == 0) {
+        [secondWindow.externalStack removeFromSuperview];
+        secondWindow.externalStack = nil;
+    }
+}
+
+-(void)rotateHostedWindow{
+    if ([self isPanelTransitioning] || panelState != POPanelStateOpen) return;
+    POXWindow *pullOverWindow = (POXWindow *)[POXWindow sharedWindow];
+    UIInterfaceOrientation current = pullOverWindow.pullOverInterfaceOrientation;
+    if (!POIsConcretePresentationOrientation(current)) {
+        current = [self contextManagerPreferredHostedInterfaceOrientation:nil];
+    }
+    if (!POIsConcretePresentationOrientation(current)) {
+        current = UIInterfaceOrientationPortrait;
+    }
+    UIInterfaceOrientation target = UIInterfaceOrientationIsLandscape(current)
+        ? UIInterfaceOrientationPortrait
+        : UIInterfaceOrientationLandscapeRight;
+    [pullOverWindow applyInterfaceOrientation:target duration:0.25 completion:nil];
 }
 
 -(void)handle:(POHandle *)handle didPanPanel:(UIPanGestureRecognizer *)recognizer{
