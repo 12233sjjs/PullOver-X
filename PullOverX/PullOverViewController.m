@@ -28,13 +28,23 @@ static CGFloat POContentCornerRadius(void) {
     return isfinite(radius) ? MIN(MAX(radius, 0), 100) : 20.0;
 }
 
-static void PORemoveHostedKeyboardViews(UIView *stack) {
-    for (UIView *subview in stack.subviews) {
-        PORemoveHostedKeyboardViews(subview);
+static BOOL PORemoveHostedKeyboardViews(UIView *stack) {
+    if (!stack) return NO;
+    BOOL removedKeyboard = NO;
+    for (UIView *subview in [stack.subviews copy]) {
         if ([NSStringFromClass(subview.class) isEqualToString:@"_UIKeyboardLayerHostView"]) {
+            [subview removeFromSuperview];
+            removedKeyboard = YES;
+            continue;
+        }
+        BOOL removedFromChild = PORemoveHostedKeyboardViews(subview);
+        removedKeyboard |= removedFromChild;
+        if (removedFromChild && subview.subviews.count == 0 &&
+            [NSStringFromClass(subview.class) isEqualToString:@"UIView"]) {
             [subview removeFromSuperview];
         }
     }
+    return removedKeyboard;
 }
 
 #define CONTENT_SHADOW_OPACITY 0.28
@@ -443,10 +453,15 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
 @property(nonatomic, copy) void (^failure)(NSString *);
 - (void)openBundle:(NSString *)bundle;
 - (void)stop;
+- (void)dismissKeyboard;
+- (void)allowKeyboard;
 - (void)layoutHostedContent;
 @end
 
-@implementation POSecondaryWindowController
+@implementation POSecondaryWindowController {
+    BOOL keyboardDismissalPending;
+    BOOL keyboardLayerPresent;
+}
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = UIColor.systemBackgroundColor;
@@ -464,6 +479,8 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
 }
 - (void)openBundle:(NSString *)bundle {
     [self loadViewIfNeeded];
+    keyboardDismissalPending = NO;
+    keyboardLayerPresent = NO;
     [self.session invalidate];
     [self.stack removeFromSuperview];
     [self.externalStack removeFromSuperview];
@@ -485,12 +502,29 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     });
 }
 - (void)stop {
+    keyboardDismissalPending = NO;
+    keyboardLayerPresent = NO;
     [self.session invalidate];
     [self.stack removeFromSuperview];
     [self.externalStack removeFromSuperview];
     self.stack = nil;
     self.externalStack = nil;
     self.bundleId = nil;
+}
+- (void)dismissKeyboard {
+    if (!self.externalStack || !keyboardLayerPresent) return;
+    PORemoveHostedKeyboardViews(self.externalStack);
+    keyboardDismissalPending = YES;
+    keyboardLayerPresent = NO;
+    if (self.externalStack.subviews.count == 0) {
+        [self.externalStack removeFromSuperview];
+        self.externalStack = nil;
+    } else {
+        [self layoutHostedContent];
+    }
+}
+- (void)allowKeyboard {
+    keyboardDismissalPending = NO;
 }
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
@@ -535,6 +569,17 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
           externalSceneStack:(UIView *)stack containsKeyboardLayer:(BOOL)keyboard
                     bundleId:(NSString *)bundle generation:(NSUInteger)generation {
     if (generation != controller.currentGeneration || ![bundle isEqualToString:self.bundleId]) return;
+    keyboardLayerPresent = keyboard;
+    if (keyboardDismissalPending && keyboard) {
+        PORemoveHostedKeyboardViews(stack);
+        keyboardLayerPresent = NO;
+        if (stack.subviews.count == 0) {
+            [stack removeFromSuperview];
+            stack = nil;
+        }
+    } else if (!keyboard) {
+        keyboardDismissalPending = NO;
+    }
     if (self.externalStack != stack) [self.externalStack removeFromSuperview];
     self.externalStack = stack;
     if (stack) [self.canvas addSubview:stack];
@@ -660,6 +705,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     POKeyboardZoomSuspensionReason keyboardZoomSuspensionReasons;
     NSUInteger keyboardZoomGeneration;
     BOOL keyboardZoomSuppressedForCurrentSession;
+    BOOL keyboardDismissalPending;
     CGFloat appliedCardScale;
     CGFloat closingFrozenCardScale;
     BOOL scaledProgrammaticCloseAnimating;
@@ -854,6 +900,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         UIViewAnimationOptionAllowUserInteraction |
         (UIViewAnimationOptionCurveEaseInOut << 16);
     keyboardZoomSuppressedForCurrentSession = NO;
+    keyboardDismissalPending = NO;
     appliedCardScale = 1.0;
     closingFrozenCardScale = 1.0;
     scaledProgrammaticCloseAnimating = NO;
@@ -3236,6 +3283,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         keyboardHideAnimationInFlight = NO;
         keyboardStateHostGeneration = 0;
         keyboardZoomSuppressedForCurrentSession = NO;
+        keyboardDismissalPending = NO;
         [self restoreKeyboardZoomImmediately];
         [self removeKeyboardZoomSuspension:POKeyboardZoomSuspensionDragging];
         showingCantHost = NO;
@@ -3877,6 +3925,8 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     }
     if (keyboardNotificationState != POKeyboardNotificationStateVisible) {
         keyboardZoomSuppressedForCurrentSession = NO;
+        keyboardDismissalPending = NO;
+        [secondWindow allowKeyboard];
     }
     keyboardNotificationState = POKeyboardNotificationStateVisible;
     keyboardHideAnimationInFlight = NO;
@@ -3940,6 +3990,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     keyboardNotificationState = POKeyboardNotificationStateHidden;
     keyboardHideAnimationInFlight = NO;
     keyboardZoomSuppressedForCurrentSession = NO;
+    keyboardDismissalPending = NO;
     [self reevaluateCardScaleAnimated:NO source:POCardScaleTransitionSourceKeyboard];
 }
 
@@ -4191,28 +4242,29 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 
 -(void)dismissHostedKeyboard{
     if (panelState != POPanelStateOpen || !externalSceneStack ||
-        externalSceneStack.superview != self.contentView) {
+        externalSceneStack.superview != self.contentView ||
+        (!hostedKeyboardLayerPresent && keyboardNotificationState != POKeyboardNotificationStateVisible)) {
         return;
     }
     PORemoveHostedKeyboardViews(externalSceneStack);
-    if (externalSceneStack.subviews.count == 0) {
-        [externalSceneStack removeFromSuperview];
-        externalSceneStack = nil;
-    }
     hostedKeyboardLayerPresent = NO;
     keyboardNotificationState = POKeyboardNotificationStateHidden;
     keyboardHideAnimationInFlight = NO;
+    keyboardDismissalPending = YES;
+    keyboardZoomSuppressedForCurrentSession = YES;
+    if (externalSceneStack.subviews.count == 0) {
+        [externalSceneStack removeFromSuperview];
+        externalSceneStack = nil;
+    } else {
+        [self layoutExternalSceneStack];
+    }
     [self restoreKeyboardZoomImmediately];
     [self reevaluateKeyboardZoomAnimated:NO];
 }
 
 -(void)dismissSecondWindowKeyboard{
     if (!secondWindow) return;
-    PORemoveHostedKeyboardViews(secondWindow.externalStack);
-    if (secondWindow.externalStack.subviews.count == 0) {
-        [secondWindow.externalStack removeFromSuperview];
-        secondWindow.externalStack = nil;
-    }
+    [secondWindow dismissKeyboard];
 }
 
 -(void)rotateHostedWindow{
@@ -5280,6 +5332,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     keyboardHideAnimationInFlight = NO;
     keyboardStateHostGeneration = 0;
     keyboardZoomSuppressedForCurrentSession = NO;
+    keyboardDismissalPending = NO;
     [self restoreKeyboardZoomImmediately];
     UIView *oldContextView = contextView;
     if (oldContextView) {
@@ -5356,6 +5409,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     keyboardHideAnimationInFlight = NO;
     keyboardStateHostGeneration = 0;
     keyboardZoomSuppressedForCurrentSession = NO;
+    keyboardDismissalPending = NO;
     [self restoreKeyboardZoomImmediately];
     keyboardZoomSuspensionReasons = POKeyboardZoomSuspensionNone;
     [self hidePresentationContainer];
@@ -5586,6 +5640,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation
         hostedKeyboardLayerPresent = NO;
         keyboardHideAnimationInFlight = NO;
         keyboardZoomSuppressedForCurrentSession = NO;
+        keyboardDismissalPending = NO;
     }
 
     UIView *previousContextView = contextView;
@@ -5716,10 +5771,13 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation
         // Hosted keyboards may appear without a UIKit keyboard notification in SpringBoard.
         keyboardNotificationState = POKeyboardNotificationStateVisible;
         keyboardHideAnimationInFlight = NO;
-        if (keyboardLayerBecamePresent) keyboardZoomSuppressedForCurrentSession = NO;
+        if (keyboardLayerBecamePresent && !keyboardDismissalPending) {
+            keyboardZoomSuppressedForCurrentSession = NO;
+        }
     } else if (!containsKeyboardLayer) {
         keyboardNotificationState = POKeyboardNotificationStateHidden;
         keyboardHideAnimationInFlight = NO;
+        keyboardDismissalPending = NO;
     }
 
     if (!contextView || !sceneStack) {
@@ -5731,7 +5789,17 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation
         [externalSceneStack removeFromSuperview];
     }
     externalSceneStack = sceneStack;
-    if (sceneStack.subviews.count > 0) {
+    if (keyboardDismissalPending && containsKeyboardLayer) {
+        PORemoveHostedKeyboardViews(sceneStack);
+        hostedKeyboardLayerPresent = NO;
+        keyboardNotificationState = POKeyboardNotificationStateHidden;
+        keyboardHideAnimationInFlight = NO;
+        if (sceneStack.subviews.count == 0) {
+            [sceneStack removeFromSuperview];
+            externalSceneStack = nil;
+        }
+    }
+    if (externalSceneStack && externalSceneStack.subviews.count > 0) {
         [self.contentView addSubview:sceneStack];
         [self layoutExternalSceneStack];
         [self.contentView bringSubviewToFront:sceneStack];
