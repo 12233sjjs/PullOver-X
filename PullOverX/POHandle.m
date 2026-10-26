@@ -79,7 +79,7 @@
 }
 
 -(BOOL)usesOpaquePresentation{
-    return self.forceOpaque || interactionOpaque;
+    return (self.forceOpaque && ![self usesNubbedPresentation]) || interactionOpaque;
 }
 
 -(void)setInteractionOpaque:(BOOL)opaque{
