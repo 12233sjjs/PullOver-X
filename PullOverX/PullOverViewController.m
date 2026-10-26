@@ -1713,7 +1713,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 }
 
 -(void)updateInteractionBackdropsAnimated:(BOOL)animated{
-    self.handle.forceOpaque = panelState != POPanelStateClosed;
+    self.handle.forceOpaque = NO;
     [self layoutWindowControls];
     oppositeHandle.hidden = NO;
     if (!panelBackdropView || !quickSwitchBackdropView || !scrollView) {
