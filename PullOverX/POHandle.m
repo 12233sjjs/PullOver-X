@@ -26,9 +26,12 @@
     UIPanGestureRecognizer *_panelPanGestureRecognizer;
     CGPoint tapTouchStartPoint;
     BOOL hasTapTouchStartPoint;
+    BOOL interactionOpaque;
 }
 
 -(void)applyCurrentPresentationAnimated:(BOOL)animated;
+-(BOOL)usesOpaquePresentation;
+-(void)setInteractionOpaque:(BOOL)opaque;
 
 @end
 
@@ -53,7 +56,7 @@
 }
 
 -(CGFloat)handleOpacity{
-    if (self.forceOpaque) return 1.0;
+    if ([self usesOpaquePresentation]) return 1.0;
     NSDictionary *settings = [POApplicationHelper settings];
     id configuredValue = self.opacityPreferenceKey ? settings[self.opacityPreferenceKey] : nil;
     if (!configuredValue) configuredValue = settings[@"handleOpacity"];
@@ -68,11 +71,21 @@
 
 -(void)applyHandleOpacity{
     CGFloat opacity = [self handleOpacity];
-    self.backgroundColor = self.forceOpaque
+    self.backgroundColor = [self usesOpaquePresentation]
         ? UIColor.secondarySystemBackgroundColor
         : [UIColor.secondarySystemBackgroundColor colorWithAlphaComponent:0.78 * opacity];
-    self.layer.shadowOpacity = self.forceOpaque ? (float)(0.32 * opacity) : 0;
+    self.layer.shadowOpacity = [self usesOpaquePresentation] ? (float)(0.32 * opacity) : 0;
     self.imageView.alpha = opacity;
+}
+
+-(BOOL)usesOpaquePresentation{
+    return self.forceOpaque || interactionOpaque;
+}
+
+-(void)setInteractionOpaque:(BOOL)opaque{
+    if (interactionOpaque == opaque) return;
+    interactionOpaque = opaque;
+    [self applyHandleOpacity];
 }
 
 -(void)setForceOpaque:(BOOL)forceOpaque{
@@ -306,6 +319,21 @@
 
 -(void)panelPan:(UIPanGestureRecognizer *)recognizer{
     [self.delegate handle:self didPanPanel:recognizer];
+}
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [self setInteractionOpaque:YES];
+    [super touchesBegan:touches withEvent:event];
+}
+
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [self setInteractionOpaque:NO];
+    [super touchesEnded:touches withEvent:event];
+}
+
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [self setInteractionOpaque:NO];
+    [super touchesCancelled:touches withEvent:event];
 }
 
 
