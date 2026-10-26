@@ -25,44 +25,62 @@
 #define PO_KEYBOARD_DISMISS_REACTIVATION_DELAY 0.65
 
 @interface UIKeyboardImpl : NSObject
++ (instancetype)activeInstance;
 + (instancetype)sharedInstance;
 - (void)dismissKeyboard;
+- (void)nonDestructivelyDismissKeyboard;
 - (void)clearForwardingInputDelegateAndResign:(BOOL)resign;
 @end
 
 static void PODismissSystemKeyboard(void) {
-    UIKeyboardImpl *impl = [UIKeyboardImpl sharedInstance];
-    if (impl && [impl respondsToSelector:@selector(clearForwardingInputDelegateAndResign:)]) {
+    UIKeyboardImpl *impl = [UIKeyboardImpl respondsToSelector:@selector(activeInstance)]
+        ? [UIKeyboardImpl activeInstance]
+        : nil;
+    if (!impl) impl = [UIKeyboardImpl sharedInstance];
+    if (impl && [impl respondsToSelector:@selector(nonDestructivelyDismissKeyboard)]) {
+        [impl nonDestructivelyDismissKeyboard];
+    } else if (impl && [impl respondsToSelector:@selector(clearForwardingInputDelegateAndResign:)]) {
         [impl clearForwardingInputDelegateAndResign:YES];
     } else if (impl && [impl respondsToSelector:@selector(dismissKeyboard)]) {
         [impl dismissKeyboard];
     }
 }
 
-static void POAddApplicationToRecentSwitcher(NSString *bundleId, NSString *sceneId) {
-    if (bundleId.length == 0) return;
+static BOOL POAddApplicationToRecentSwitcher(NSString *bundleId,
+                                             NSString *sceneId,
+                                             UIWindowScene *windowScene) {
+    if (bundleId.length == 0) return NO;
     Class displayItemClass = objc_getClass("SBDisplayItem");
-    Class appLayoutClass = objc_getClass("SBAppLayout");
+    Class coordinatorClass = objc_getClass("SBMainSwitcherControllerCoordinator");
     Class switcherClass = objc_getClass("SBMainSwitcherViewController");
     SEL sharedSelector = NSSelectorFromString(@"sharedInstance");
     SEL displayItemSelector = NSSelectorFromString(@"applicationDisplayItemWithBundleIdentifier:sceneIdentifier:");
-    SEL layoutSelector = NSSelectorFromString(@"initWithItemsForLayoutRoles:configuration:environment:");
-    SEL addSelector = NSSelectorFromString(@"_addAppLayoutToFront:");
-    if (!displayItemClass || !appLayoutClass || !switcherClass ||
-        ![displayItemClass respondsToSelector:displayItemSelector] ||
-        ![switcherClass respondsToSelector:sharedSelector]) return;
+    SEL coordinatorAddSelector = NSSelectorFromString(@"addAppLayoutForDisplayItem:windowScene:completion:");
+    SEL switcherAddSelector = NSSelectorFromString(@"addAppLayoutForDisplayItem:completion:");
+    if (!displayItemClass || ![displayItemClass respondsToSelector:displayItemSelector]) return NO;
     @try {
         id displayItem = ((id (*)(id, SEL, id, id))objc_msgSend)(
             displayItemClass, displayItemSelector, bundleId, sceneId);
-        id allocLayout = ((id (*)(id, SEL))objc_msgSend)(appLayoutClass, @selector(alloc));
-        id appLayout = ((id (*)(id, SEL, id, long long, long long))objc_msgSend)(
-            allocLayout, layoutSelector, @{ @1: displayItem }, 1, 1);
-        id switcher = ((id (*)(id, SEL))objc_msgSend)(switcherClass, sharedSelector);
-        if (appLayout && [switcher respondsToSelector:addSelector]) {
-            ((void (*)(id, SEL, id))objc_msgSend)(switcher, addSelector, appLayout);
+        if (!displayItem) return NO;
+        if (coordinatorClass && [coordinatorClass respondsToSelector:sharedSelector] && windowScene && sceneId.length) {
+            id coordinator = ((id (*)(id, SEL))objc_msgSend)(coordinatorClass, sharedSelector);
+            if ([coordinator respondsToSelector:coordinatorAddSelector]) {
+                ((void (*)(id, SEL, id, id, id))objc_msgSend)(
+                    coordinator, coordinatorAddSelector, displayItem, windowScene, ^{});
+                return YES;
+            }
+        }
+        if (switcherClass && [switcherClass respondsToSelector:sharedSelector]) {
+            id switcher = ((id (*)(id, SEL))objc_msgSend)(switcherClass, sharedSelector);
+            if ([switcher respondsToSelector:switcherAddSelector]) {
+                ((void (*)(id, SEL, id, id))objc_msgSend)(
+                    switcher, switcherAddSelector, displayItem, nil);
+                return YES;
+            }
         }
     } @catch (__unused NSException *exception) {
     }
+    return NO;
 }
 static CGFloat POContentCornerRadius(void) {
     id value = [POApplicationHelper settings][@"windowCornerRadius"];
@@ -550,6 +568,8 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
 - (void)stop {
     NSString *closedBundleId = [self.bundleId copy];
     NSString *closedSceneIdentifier = [hostedSceneIdentifier copy];
+    POAddApplicationToRecentSwitcher(closedBundleId, closedSceneIdentifier,
+                                     self.view.window.windowScene);
     keyboardDismissalPending = NO;
     keyboardLayerPresent = NO;
     keyboardDismissedAt = 0;
@@ -560,21 +580,12 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     self.externalStack = nil;
     self.bundleId = nil;
     hostedSceneIdentifier = nil;
-    POAddApplicationToRecentSwitcher(closedBundleId, closedSceneIdentifier);
 }
 - (void)dismissKeyboard {
     if (!self.externalStack || !keyboardLayerPresent) return;
     PODismissSystemKeyboard();
-    PORemoveHostedKeyboardViews(self.externalStack);
-    keyboardDismissalPending = YES;
-    keyboardDismissedAt = CACurrentMediaTime();
-    keyboardLayerPresent = NO;
-    if (self.externalStack.subviews.count == 0) {
-        [self.externalStack removeFromSuperview];
-        self.externalStack = nil;
-    } else {
-        [self layoutHostedContent];
-    }
+    keyboardDismissalPending = NO;
+    keyboardDismissedAt = 0;
 }
 - (void)allowKeyboard {
     keyboardDismissalPending = NO;
@@ -782,8 +793,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 }
 
 -(void)retainPresentationAfterReleaseIfPossible;
--(void)registerBackgroundSceneForRecentlyClosedBundleIfNeeded:(NSString *)bundleId
-                                            sceneIdentifier:(NSString *)sceneIdentifier;
+-(void)registerBackgroundSceneForRecentlyClosedBundleIfNeeded:(NSString *)bundleId;
 -(BOOL)hasLiveRetainedPresentationForBundleId:(NSString *)bundleId;
 -(UIInterfaceOrientation)cachedPresentationOrientationForBundleId:(NSString *)bundleId;
 -(UIInterfaceOrientation)resolvedHostedOrientationForBundleId:(NSString *)bundleId
@@ -2251,8 +2261,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     }
 }
 
--(void)registerBackgroundSceneForRecentlyClosedBundleIfNeeded:(NSString *)bundleId
-                                            sceneIdentifier:(NSString *)sceneIdentifier{
+-(void)registerBackgroundSceneForRecentlyClosedBundleIfNeeded:(NSString *)bundleId{
     if (bundleId.length == 0 ||
         ![POApplicationHelper isUserFacingApplicationBundleId:bundleId]) {
         return;
@@ -2262,7 +2271,6 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         return;
     }
     [[ContextHostManager sharedInstance] requestSystemDefaultScenePreparationForBundleId:bundleId];
-    POAddApplicationToRecentSwitcher(bundleId, sceneIdentifier);
 }
 
 -(BOOL)hasLiveRetainedPresentationForBundleId:(NSString *)bundleId{
@@ -3385,18 +3393,20 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
                 [self retainPresentationAfterReleaseIfPossible];
                 NSString *deferredClosedBundleId = [self->hostSession.activeBundleId copy];
                 NSString *deferredClosedSceneId = [self->hostedSceneIdentifier copy];
+                POAddApplicationToRecentSwitcher(deferredClosedBundleId, deferredClosedSceneId,
+                                                 self.view.window.windowScene);
                 [self->hostSession releaseActiveSessionPreservingPresentation];
-                [self registerBackgroundSceneForRecentlyClosedBundleIfNeeded:deferredClosedBundleId
-                                                             sceneIdentifier:deferredClosedSceneId];
+                [self registerBackgroundSceneForRecentlyClosedBundleIfNeeded:deferredClosedBundleId];
                 [[POSplitSessionController sharedInstance] end];
             });
         } else {
             [self retainPresentationAfterReleaseIfPossible];
             NSString *closedBundleId = [hostSession.activeBundleId copy];
             NSString *closedSceneId = [hostedSceneIdentifier copy];
+            POAddApplicationToRecentSwitcher(closedBundleId, closedSceneId,
+                                             self.view.window.windowScene);
             [hostSession releaseActiveSessionPreservingPresentation];
-            [self registerBackgroundSceneForRecentlyClosedBundleIfNeeded:closedBundleId
-                                                         sceneIdentifier:closedSceneId];
+            [self registerBackgroundSceneForRecentlyClosedBundleIfNeeded:closedBundleId];
             [[POSplitSessionController sharedInstance] end];
         }
         [self storeHandlePosition];
@@ -4340,26 +4350,12 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         return;
     }
     PODismissSystemKeyboard();
-    PORemoveHostedKeyboardViews(externalSceneStack);
-    hostedKeyboardLayerPresent = NO;
-    keyboardNotificationState = POKeyboardNotificationStateHidden;
-    keyboardHideAnimationInFlight = NO;
-    keyboardDismissalPending = YES;
-    keyboardDismissedAt = CACurrentMediaTime();
-    keyboardZoomSuppressedForCurrentSession = YES;
-    if (externalSceneStack.subviews.count == 0) {
-        [externalSceneStack removeFromSuperview];
-        externalSceneStack = nil;
-    } else {
-        [self layoutExternalSceneStack];
-    }
-    [self restoreKeyboardZoomImmediately];
-    [self reevaluateKeyboardZoomAnimated:NO];
+    keyboardDismissalPending = NO;
+    keyboardDismissedAt = 0;
 }
 
 -(void)dismissSecondWindowKeyboard{
     if (!secondWindow) return;
-    PODismissSystemKeyboard();
     [secondWindow dismissKeyboard];
 }
 
