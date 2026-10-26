@@ -88,6 +88,13 @@ static CGFloat POContentCornerRadius(void) {
     return isfinite(radius) ? MIN(MAX(radius, 0), 100) : 20.0;
 }
 
+static CGFloat POOppositeHandleHiddenPercentage(void) {
+    id value = [POApplicationHelper settings][@"oppositeNubHiddenPercentage"];
+    CGFloat percentage = value ? [value doubleValue] : 100.0;
+    if (!isfinite(percentage)) percentage = 100.0;
+    return MIN(MAX(round(percentage), 0.0), 100.0);
+}
+
 static BOOL PORemoveHostedKeyboardViews(UIView *stack) {
     if (!stack) return NO;
     BOOL removedKeyboard = NO;
@@ -512,6 +519,8 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
 @property(nonatomic, copy) NSString *bundleId;
 @property(nonatomic, copy) void (^failure)(NSString *);
 - (void)openBundle:(NSString *)bundle;
+- (void)openBundle:(NSString *)bundle recordHistory:(BOOL)recordHistory;
+- (void)returnToPreviousBundle;
 - (void)stop;
 - (void)dismissKeyboard;
 - (void)allowKeyboard;
@@ -523,6 +532,7 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     BOOL keyboardLayerPresent;
     CFTimeInterval keyboardDismissedAt;
     NSString *hostedSceneIdentifier;
+    NSMutableArray<NSString *> *bundleHistory;
 }
 - (void)viewDidLoad {
     [super viewDidLoad];
@@ -540,7 +550,18 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     self.session.delegate = self;
 }
 - (void)openBundle:(NSString *)bundle {
+    [self openBundle:bundle recordHistory:YES];
+}
+- (void)openBundle:(NSString *)bundle recordHistory:(BOOL)recordHistory {
     [self loadViewIfNeeded];
+    if (!bundleHistory) bundleHistory = [NSMutableArray array];
+    NSString *previousBundleId = [self.bundleId copy];
+    if (recordHistory && previousBundleId.length &&
+        ![previousBundleId isEqualToString:bundle] &&
+        [POApplicationHelper isUserFacingApplicationBundleId:previousBundleId]) {
+        [bundleHistory addObject:previousBundleId];
+        if (bundleHistory.count > 20) [bundleHistory removeObjectAtIndex:0];
+    }
     keyboardDismissalPending = NO;
     keyboardLayerPresent = NO;
     keyboardDismissedAt = 0;
@@ -565,6 +586,17 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
         }
     });
 }
+- (void)returnToPreviousBundle {
+    NSString *bundle = bundleHistory.lastObject;
+    while (bundle && (![POApplicationHelper isUserFacingApplicationBundleId:bundle] ||
+                      [bundle isEqualToString:self.bundleId])) {
+        [bundleHistory removeLastObject];
+        bundle = bundleHistory.lastObject;
+    }
+    if (!bundle) return;
+    [bundleHistory removeLastObject];
+    [self openBundle:bundle recordHistory:NO];
+}
 - (void)stop {
     NSString *closedBundleId = [self.bundleId copy];
     NSString *closedSceneIdentifier = [hostedSceneIdentifier copy];
@@ -580,6 +612,7 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     self.externalStack = nil;
     self.bundleId = nil;
     hostedSceneIdentifier = nil;
+    [bundleHistory removeAllObjects];
 }
 - (void)dismissKeyboard {
     if (!self.externalStack || !keyboardLayerPresent) return;
@@ -686,6 +719,8 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     BOOL draggingHandleVertically;
     CGFloat handleDragStartY;
     NSString *pinnedBundleId;
+    NSMutableArray<NSString *> *windowBundleHistory;
+    BOOL restoringPreviousWindow;
     NSString *hostedSceneIdentifier;
     UIView *contextView;
     UIView *externalSceneStack;
@@ -977,6 +1012,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         (UIViewAnimationOptionCurveEaseInOut << 16);
     keyboardZoomSuppressedForCurrentSession = NO;
     keyboardDismissalPending = NO;
+    windowBundleHistory = [NSMutableArray array];
     appliedCardScale = 1.0;
     closingFrozenCardScale = 1.0;
     scaledProgrammaticCloseAnimating = NO;
@@ -1097,15 +1133,22 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 
 -(void)layoutAdditionalControls{
     if (!oppositeHandle || !self.handle || CGRectIsEmpty(self.view.bounds)) return;
-    oppositeHandle.hidden = panelState != POPanelStateClosed;
+    oppositeHandle.hidden = NO;
     CGFloat size = CGRectGetWidth(oppositeHandle.bounds);
     CGPoint primaryCenter = [self.handle.superview convertPoint:self.handle.center toView:self.view];
     CGFloat minimumY = self.view.safeAreaInsets.top + size / 2 + HANDLE_EDGE_GAP;
     CGFloat maximumY = MAX(minimumY, CGRectGetHeight(self.view.bounds) -
         self.view.safeAreaInsets.bottom - size / 2 - HANDLE_EDGE_GAP);
     BOOL primaryOnLeft = primaryCenter.x < CGRectGetMidX(self.view.bounds);
-    CGFloat oppositeX = primaryOnLeft ? CGRectGetWidth(self.view.bounds) - size - HANDLE_EDGE_GAP : HANDLE_EDGE_GAP;
-    oppositeHandle.restingOriginX = oppositeX;
+    CGFloat restingOppositeX = primaryOnLeft
+        ? CGRectGetWidth(self.view.bounds) - size - HANDLE_EDGE_GAP
+        : HANDLE_EDGE_GAP;
+    oppositeHandle.restingOriginX = restingOppositeX;
+    CGFloat oppositeX = restingOppositeX;
+    if (panelState != POPanelStateClosed) {
+        CGFloat visibleWidth = size * (1.0 - POOppositeHandleHiddenPercentage() / 100.0);
+        oppositeX = primaryOnLeft ? CGRectGetWidth(self.view.bounds) - visibleWidth : visibleWidth - size;
+    }
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     NSNumber *primaryRatio = [defaults objectForKey:@"primaryHandleVerticalRatio"];
     if (!primaryRatio && !CGSizeEqualToSize(lastLaidOutSize, CGSizeZero)) {
@@ -1178,18 +1221,18 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 -(void)layoutWindowControls{
     if (!primaryWindowTools) {
         primaryWindowTools = [self windowToolsWithSymbols:@[
-            @"arrow.up.left.and.arrow.down.right", @"keyboard.chevron.compact.down",
+            @"arrow.up.left.and.arrow.down.right", @"arrow.uturn.backward",
             @"arrow.clockwise", @"rotate.right", @"xmark"]
-            labels:@[@"全屏打开第一窗口", @"取消输入", @"重新加载第一窗口",
+            labels:@[@"全屏打开第一窗口", @"返回上一个窗口", @"重新加载第一窗口",
                      @"旋转窗口", @"关闭第一窗口"]
-            selectors:@[@"fullscreenPrimaryWindow", @"dismissHostedKeyboard",
+            selectors:@[@"fullscreenPrimaryWindow", @"returnPreviousWindow",
                         @"reloadPrimaryWindow", @"rotateHostedWindow", @"close"]];
         secondaryWindowTools = [self windowToolsWithSymbols:@[
-            @"arrow.up.left.and.arrow.down.right", @"keyboard.chevron.compact.down",
+            @"arrow.up.left.and.arrow.down.right", @"arrow.uturn.backward",
             @"arrow.left.arrow.right", @"arrow.clockwise", @"rotate.right", @"xmark"]
-            labels:@[@"全屏打开第二窗口", @"取消输入", @"交换两个窗口",
+            labels:@[@"全屏打开第二窗口", @"返回上一个窗口", @"交换两个窗口",
                      @"重新加载第二窗口", @"旋转窗口", @"关闭第二窗口"]
-            selectors:@[@"fullscreenSecondWindow", @"dismissSecondWindowKeyboard",
+            selectors:@[@"fullscreenSecondWindow", @"returnPreviousSecondWindow",
                         @"swapWindows", @"reloadSecondWindow", @"rotateHostedWindow",
                         @"closeSecondWindow"]];
     }
@@ -1265,6 +1308,11 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     }
     [self dismissAppSearch];
     [self dismissPresentedQuickSwitchMenuImmediately];
+    if (secondWindow) {
+        [secondWindow openBundle:bundle];
+        [self layoutWindowControls];
+        return;
+    }
     [self closeSecondWindow];
     secondWindow = [[POSecondaryWindowController alloc] init];
     __weak typeof(self) weakSelf = self;
@@ -1667,7 +1715,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 -(void)updateInteractionBackdropsAnimated:(BOOL)animated{
     self.handle.forceOpaque = panelState != POPanelStateClosed;
     [self layoutWindowControls];
-    oppositeHandle.hidden = panelState != POPanelStateClosed;
+    oppositeHandle.hidden = NO;
     if (!panelBackdropView || !quickSwitchBackdropView || !scrollView) {
         return;
     }
@@ -1761,7 +1809,16 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         }
     }
     CGPoint oppositePoint = [oppositeHandle convertPoint:point fromView:self.view.window];
-    if (!oppositeHandle.hidden && [oppositeHandle pointInside:oppositePoint withEvent:event]) {
+    BOOL oppositeEdgeHit = NO;
+    if (panelState != POPanelStateClosed) {
+        CGPoint oppositeCenter = [oppositeHandle.superview convertPoint:oppositeHandle.center toView:self.view];
+        CGFloat edgeX = oppositeCenter.x < CGRectGetMidX(self.view.bounds) ? 0 : CGRectGetWidth(self.view.bounds);
+        CGFloat edgeTolerance = MAX(22.0, CGRectGetWidth(oppositeHandle.bounds) / 2.0 + 8.0);
+        oppositeEdgeHit = fabs(pointInView.x - edgeX) <= edgeTolerance &&
+            fabs(pointInView.y - oppositeCenter.y) <= MAX(26.0, CGRectGetHeight(oppositeHandle.bounds) / 2.0 + 8.0);
+    }
+    if (!oppositeHandle.hidden &&
+        (oppositeEdgeHit || [oppositeHandle pointInside:oppositePoint withEvent:event])) {
         return oppositeHandle;
     }
     CGPoint handlePointInHandle = [self.handle convertPoint:point fromView:self.view.window];
@@ -3438,7 +3495,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     }
 
     panelState = POPanelStateOpening;
-    oppositeHandle.hidden = YES;
+    oppositeHandle.hidden = NO;
     if (previousLayoutMode != [self currentQuickSwitchLayoutMode]) {
         [self applyLayoutPreservingHandlePosition:YES];
     }
@@ -4190,7 +4247,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         return;
     }
     [self dismissAppSearch];
-    if (panelState == POPanelStateOpen && secondWindow) {
+    if (panelState == POPanelStateOpen && secondWindow && !restoringPreviousWindow) {
         [self dismissPresentedQuickSwitchMenuImmediately];
         if (![bundleId isEqualToString:hostSession.activeBundleId] &&
             ![bundleId isEqualToString:pinnedBundleId] &&
@@ -4205,6 +4262,12 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         contextView.superview == self.contentView && presentationBundleId.length > 0;
     BOOL switchingVisibleTarget = panelState == POPanelStateOpen && hasVisibleLivePresentation &&
         ![hostSession.activeBundleId isEqualToString:bundleId];
+    NSString *previousBundleId = [hostSession.activeBundleId copy] ?: [pinnedBundleId copy];
+    if (switchingVisibleTarget && !restoringPreviousWindow && previousBundleId.length &&
+        ![previousBundleId isEqualToString:bundleId] && windowBundleHistory) {
+        [windowBundleHistory addObject:previousBundleId];
+        if (windowBundleHistory.count > 20) [windowBundleHistory removeObjectAtIndex:0];
+    }
     UIInterfaceOrientation previousHostedOrientation =
         [self contextManagerPreferredHostedInterfaceOrientation:nil];
     if (switchingVisibleTarget) {
@@ -4341,6 +4404,29 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         return;
     }
     [self openApplicationExternallyFromQuickSwitch:[hostSession.activeBundleId copy]];
+}
+
+-(void)returnPreviousWindow{
+    if ([self isPanelTransitioning] || panelState != POPanelStateOpen) return;
+    NSString *bundle = windowBundleHistory.lastObject;
+    while (bundle && (![POApplicationHelper isUserFacingApplicationBundleId:bundle] ||
+                      [bundle isEqualToString:hostSession.activeBundleId])) {
+        [windowBundleHistory removeLastObject];
+        bundle = windowBundleHistory.lastObject;
+    }
+    if (bundle.length == 0) {
+        [self showCenterMessage:@"没有上一个窗口。"];
+        return;
+    }
+    [windowBundleHistory removeLastObject];
+    restoringPreviousWindow = YES;
+    [self pinAppWithBundleId:bundle];
+    restoringPreviousWindow = NO;
+}
+
+-(void)returnPreviousSecondWindow{
+    if ([self isPanelTransitioning] || panelState != POPanelStateOpen || !secondWindow) return;
+    [secondWindow returnToPreviousBundle];
 }
 
 -(void)dismissHostedKeyboard{
