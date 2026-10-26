@@ -509,11 +509,9 @@ static NSString * const kPOEnabledPendingRespringKey = @"enabled-respring-pendin
     if (!value && ([key isEqualToString:@"leftHandleOpacity"] || [key isEqualToString:@"rightHandleOpacity"])) {
         value = [[self userDefaultsForSuite:suiteName] objectForKey:@"handleOpacity"];
     }
-    if ([key isEqualToString:@"nubHiddenPercentage"] ||
-        [key isEqualToString:@"oppositeNubHiddenPercentage"]) {
+    if ([key isEqualToString:@"nubHiddenPercentage"]) {
         CGFloat percentage = [(value ?: properties[@"default"]) doubleValue];
-        CGFloat fallback = [key isEqualToString:@"oppositeNubHiddenPercentage"] ? 100 : 70;
-        return @(isfinite(percentage) ? MIN(MAX(round(percentage), 0), 100) : fallback);
+        return @(isfinite(percentage) ? MIN(MAX(round(percentage), 0), 100) : 70);
     }
     return value ?: properties[@"default"];
 }

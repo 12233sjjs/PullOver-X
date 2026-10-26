@@ -88,13 +88,6 @@ static CGFloat POContentCornerRadius(void) {
     return isfinite(radius) ? MIN(MAX(radius, 0), 100) : 20.0;
 }
 
-static CGFloat POOppositeHandleHiddenPercentage(void) {
-    id value = [POApplicationHelper settings][@"oppositeNubHiddenPercentage"];
-    CGFloat percentage = value ? [value doubleValue] : 100.0;
-    if (!isfinite(percentage)) percentage = 100.0;
-    return MIN(MAX(round(percentage), 0.0), 100.0);
-}
-
 static BOOL PORemoveHostedKeyboardViews(UIView *stack) {
     if (!stack) return NO;
     BOOL removedKeyboard = NO;
@@ -1133,22 +1126,15 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 
 -(void)layoutAdditionalControls{
     if (!oppositeHandle || !self.handle || CGRectIsEmpty(self.view.bounds)) return;
-    oppositeHandle.hidden = NO;
+    oppositeHandle.hidden = panelState != POPanelStateClosed;
     CGFloat size = CGRectGetWidth(oppositeHandle.bounds);
     CGPoint primaryCenter = [self.handle.superview convertPoint:self.handle.center toView:self.view];
     CGFloat minimumY = self.view.safeAreaInsets.top + size / 2 + HANDLE_EDGE_GAP;
     CGFloat maximumY = MAX(minimumY, CGRectGetHeight(self.view.bounds) -
         self.view.safeAreaInsets.bottom - size / 2 - HANDLE_EDGE_GAP);
     BOOL primaryOnLeft = primaryCenter.x < CGRectGetMidX(self.view.bounds);
-    CGFloat restingOppositeX = primaryOnLeft
-        ? CGRectGetWidth(self.view.bounds) - size - HANDLE_EDGE_GAP
-        : HANDLE_EDGE_GAP;
-    oppositeHandle.restingOriginX = restingOppositeX;
-    CGFloat oppositeX = restingOppositeX;
-    if (panelState != POPanelStateClosed) {
-        CGFloat visibleWidth = size * (1.0 - POOppositeHandleHiddenPercentage() / 100.0);
-        oppositeX = primaryOnLeft ? CGRectGetWidth(self.view.bounds) - visibleWidth : visibleWidth - size;
-    }
+    CGFloat oppositeX = primaryOnLeft ? CGRectGetWidth(self.view.bounds) - size - HANDLE_EDGE_GAP : HANDLE_EDGE_GAP;
+    oppositeHandle.restingOriginX = oppositeX;
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     NSNumber *primaryRatio = [defaults objectForKey:@"primaryHandleVerticalRatio"];
     if (!primaryRatio && !CGSizeEqualToSize(lastLaidOutSize, CGSizeZero)) {
@@ -1222,19 +1208,21 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     if (!primaryWindowTools) {
         primaryWindowTools = [self windowToolsWithSymbols:@[
             @"arrow.up.left.and.arrow.down.right", @"arrow.uturn.backward",
-            @"arrow.clockwise", @"rotate.right", @"xmark"]
-            labels:@[@"全屏打开第一窗口", @"返回上一个窗口", @"重新加载第一窗口",
-                     @"旋转窗口", @"关闭第一窗口"]
+            @"camera.viewfinder", @"network", @"arrow.clockwise", @"rotate.right", @"xmark"]
+            labels:@[@"全屏打开第一窗口", @"返回上一个窗口", @"截图", @"切换 VPN",
+                     @"重新加载第一窗口", @"旋转窗口", @"关闭第一窗口"]
             selectors:@[@"fullscreenPrimaryWindow", @"returnPreviousWindow",
-                        @"reloadPrimaryWindow", @"rotateHostedWindow", @"close"]];
+                        @"takeScreenshot", @"toggleVPN", @"reloadPrimaryWindow",
+                        @"rotateHostedWindow", @"close"]];
         secondaryWindowTools = [self windowToolsWithSymbols:@[
             @"arrow.up.left.and.arrow.down.right", @"arrow.uturn.backward",
-            @"arrow.left.arrow.right", @"arrow.clockwise", @"rotate.right", @"xmark"]
-            labels:@[@"全屏打开第二窗口", @"返回上一个窗口", @"交换两个窗口",
-                     @"重新加载第二窗口", @"旋转窗口", @"关闭第二窗口"]
+            @"camera.viewfinder", @"network", @"arrow.left.arrow.right", @"arrow.clockwise",
+            @"rotate.right", @"xmark"]
+            labels:@[@"全屏打开第二窗口", @"返回上一个窗口", @"截图", @"切换 VPN",
+                     @"交换两个窗口", @"重新加载第二窗口", @"旋转窗口", @"关闭第二窗口"]
             selectors:@[@"fullscreenSecondWindow", @"returnPreviousSecondWindow",
-                        @"swapWindows", @"reloadSecondWindow", @"rotateHostedWindow",
-                        @"closeSecondWindow"]];
+                        @"takeScreenshot", @"toggleVPN", @"swapWindows",
+                        @"reloadSecondWindow", @"rotateHostedWindow", @"closeSecondWindow"]];
     }
     BOOL visible = panelState == POPanelStateOpen && !keyboardZoomContainer.hidden &&
         !presentedQuickSwitchMenu && !appSearchNavigation;
@@ -1478,45 +1466,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         return;
     }
     if (action == 2) {
-        // Reuse the iOS 16 VPN preferences controller's configured-connection logic.
-        dlopen("/System/Library/PreferenceBundles/VPNPreferences.bundle/VPNPreferences", RTLD_LAZY);
-        @try {
-            id controller = [[NSClassFromString(@"VPNController") alloc] init];
-            SEL specs = NSSelectorFromString(@"specifiers");
-            NSArray *specifiers = [controller respondsToSelector:specs]
-                ? ((id (*)(id, SEL))objc_msgSend)(controller, specs) : nil;
-            id target = nil;
-            for (id specifier in specifiers) {
-                SEL cellType = NSSelectorFromString(@"cellType");
-                if ([specifier respondsToSelector:cellType] &&
-                    ((NSInteger (*)(id, SEL))objc_msgSend)(specifier, cellType) == 1) {
-                    target = specifier;
-                    break;
-                }
-            }
-            if (!target) { [self showCenterMessage:@"未找到已配置的 VPN。"]; return; }
-            NSArray *getters = @[@"getPersonalConnectionStateForSpecifier:", @"getEnterpriseConnectionStateForSpecifier:"];
-            NSArray *setters = @[@"setPersonalVPNActive:specifier:", @"setEnterpriseVPNActive:specifier:"];
-            BOOL active = NO;
-            for (NSString *name in getters) {
-                SEL selector = NSSelectorFromString(name);
-                if ([controller respondsToSelector:selector]) {
-                    id value = ((id (*)(id, SEL, id))objc_msgSend)(controller, selector, target);
-                    active |= [value respondsToSelector:@selector(boolValue)] && [value boolValue];
-                }
-            }
-            BOOL supported = NO;
-            for (NSString *name in setters) {
-                SEL selector = NSSelectorFromString(name);
-                if ([controller respondsToSelector:selector]) {
-                    ((void (*)(id, SEL, BOOL, id))objc_msgSend)(controller, selector, !active, target);
-                    supported = YES;
-                }
-            }
-            [self showCenterMessage:supported ? @"已发送 VPN 切换请求。" : @"当前系统不支持此 VPN 操作。"];
-        } @catch (__unused NSException *exception) {
-            [self showCenterMessage:@"无法切换 VPN，请检查系统 VPN 配置。"];
-        }
+        [self toggleVPN];
         return;
     }
     if (action >= 4) {
@@ -1713,10 +1663,9 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 }
 
 -(void)updateInteractionBackdropsAnimated:(BOOL)animated{
-    self.handle.forceOpaque = NO;
-    oppositeHandle.forceOpaque = panelState != POPanelStateClosed;
+    self.handle.forceOpaque = panelState != POPanelStateClosed;
     [self layoutWindowControls];
-    oppositeHandle.hidden = NO;
+    oppositeHandle.hidden = panelState != POPanelStateClosed;
     if (!panelBackdropView || !quickSwitchBackdropView || !scrollView) {
         return;
     }
@@ -1810,16 +1759,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         }
     }
     CGPoint oppositePoint = [oppositeHandle convertPoint:point fromView:self.view.window];
-    BOOL oppositeEdgeHit = NO;
-    if (panelState != POPanelStateClosed) {
-        CGPoint oppositeCenter = [oppositeHandle.superview convertPoint:oppositeHandle.center toView:self.view];
-        CGFloat edgeX = oppositeCenter.x < CGRectGetMidX(self.view.bounds) ? 0 : CGRectGetWidth(self.view.bounds);
-        CGFloat edgeTolerance = MAX(22.0, CGRectGetWidth(oppositeHandle.bounds) / 2.0 + 8.0);
-        oppositeEdgeHit = fabs(pointInView.x - edgeX) <= edgeTolerance &&
-            fabs(pointInView.y - oppositeCenter.y) <= MAX(26.0, CGRectGetHeight(oppositeHandle.bounds) / 2.0 + 8.0);
-    }
-    if (!oppositeHandle.hidden &&
-        (oppositeEdgeHit || [oppositeHandle pointInside:oppositePoint withEvent:event])) {
+    if (!oppositeHandle.hidden && [oppositeHandle pointInside:oppositePoint withEvent:event]) {
         return oppositeHandle;
     }
     CGPoint handlePointInHandle = [self.handle convertPoint:point fromView:self.view.window];
@@ -3496,7 +3436,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     }
 
     panelState = POPanelStateOpening;
-    oppositeHandle.hidden = NO;
+    oppositeHandle.hidden = YES;
     if (previousLayoutMode != [self currentQuickSwitchLayoutMode]) {
         [self applyLayoutPreservingHandlePosition:YES];
     }
@@ -4428,6 +4368,65 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 -(void)returnPreviousSecondWindow{
     if ([self isPanelTransitioning] || panelState != POPanelStateOpen || !secondWindow) return;
     [secondWindow returnToPreviousBundle];
+}
+
+-(void)takeScreenshot{
+    @try {
+        id springBoard = UIApplication.sharedApplication;
+        SEL take = NSSelectorFromString(@"takeScreenshot");
+        SEL edit = NSSelectorFromString(@"_takeScreenshotAndEdit:");
+        if ([springBoard respondsToSelector:take]) {
+            ((void (*)(id, SEL))objc_msgSend)(springBoard, take);
+            return;
+        }
+        if ([springBoard respondsToSelector:edit]) {
+            ((void (*)(id, SEL, BOOL))objc_msgSend)(springBoard, edit, YES);
+            return;
+        }
+    } @catch (__unused NSException *exception) {
+    }
+    [self showCenterMessage:@"当前系统不支持截图操作。"];
+}
+
+-(void)toggleVPN{
+    dlopen("/System/Library/PreferenceBundles/VPNPreferences.bundle/VPNPreferences", RTLD_LAZY);
+    @try {
+        id controller = [[NSClassFromString(@"VPNController") alloc] init];
+        SEL specs = NSSelectorFromString(@"specifiers");
+        NSArray *specifiers = [controller respondsToSelector:specs]
+            ? ((id (*)(id, SEL))objc_msgSend)(controller, specs) : nil;
+        id target = nil;
+        for (id specifier in specifiers) {
+            SEL cellType = NSSelectorFromString(@"cellType");
+            if ([specifier respondsToSelector:cellType] &&
+                ((NSInteger (*)(id, SEL))objc_msgSend)(specifier, cellType) == 1) {
+                target = specifier;
+                break;
+            }
+        }
+        if (!target) { [self showCenterMessage:@"未找到已配置的 VPN。"]; return; }
+        NSArray *getters = @[@"getPersonalConnectionStateForSpecifier:", @"getEnterpriseConnectionStateForSpecifier:"];
+        NSArray *setters = @[@"setPersonalVPNActive:specifier:", @"setEnterpriseVPNActive:specifier:"];
+        BOOL active = NO;
+        for (NSString *name in getters) {
+            SEL selector = NSSelectorFromString(name);
+            if ([controller respondsToSelector:selector]) {
+                id value = ((id (*)(id, SEL, id))objc_msgSend)(controller, selector, target);
+                active |= [value respondsToSelector:@selector(boolValue)] && [value boolValue];
+            }
+        }
+        BOOL supported = NO;
+        for (NSString *name in setters) {
+            SEL selector = NSSelectorFromString(name);
+            if ([controller respondsToSelector:selector]) {
+                ((void (*)(id, SEL, BOOL, id))objc_msgSend)(controller, selector, !active, target);
+                supported = YES;
+            }
+        }
+        [self showCenterMessage:supported ? @"已发送 VPN 切换请求。" : @"当前系统不支持此 VPN 操作。"];
+    } @catch (__unused NSException *exception) {
+        [self showCenterMessage:@"无法切换 VPN，请检查系统 VPN 配置。"];
+    }
 }
 
 -(void)dismissHostedKeyboard{
