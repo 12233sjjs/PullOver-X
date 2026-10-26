@@ -27,12 +27,41 @@
 @interface UIKeyboardImpl : NSObject
 + (instancetype)sharedInstance;
 - (void)dismissKeyboard;
+- (void)clearForwardingInputDelegateAndResign:(BOOL)resign;
 @end
 
 static void PODismissSystemKeyboard(void) {
     UIKeyboardImpl *impl = [UIKeyboardImpl sharedInstance];
-    if (impl && [impl respondsToSelector:@selector(dismissKeyboard)]) {
+    if (impl && [impl respondsToSelector:@selector(clearForwardingInputDelegateAndResign:)]) {
+        [impl clearForwardingInputDelegateAndResign:YES];
+    } else if (impl && [impl respondsToSelector:@selector(dismissKeyboard)]) {
         [impl dismissKeyboard];
+    }
+}
+
+static void POAddApplicationToRecentSwitcher(NSString *bundleId, NSString *sceneId) {
+    if (bundleId.length == 0) return;
+    Class displayItemClass = objc_getClass("SBDisplayItem");
+    Class appLayoutClass = objc_getClass("SBAppLayout");
+    Class switcherClass = objc_getClass("SBMainSwitcherViewController");
+    SEL sharedSelector = NSSelectorFromString(@"sharedInstance");
+    SEL displayItemSelector = NSSelectorFromString(@"applicationDisplayItemWithBundleIdentifier:sceneIdentifier:");
+    SEL layoutSelector = NSSelectorFromString(@"initWithItemsForLayoutRoles:configuration:environment:");
+    SEL addSelector = NSSelectorFromString(@"_addAppLayoutToFront:");
+    if (!displayItemClass || !appLayoutClass || !switcherClass ||
+        ![displayItemClass respondsToSelector:displayItemSelector] ||
+        ![switcherClass respondsToSelector:sharedSelector]) return;
+    @try {
+        id displayItem = ((id (*)(id, SEL, id, id))objc_msgSend)(
+            displayItemClass, displayItemSelector, bundleId, sceneId);
+        id allocLayout = ((id (*)(id, SEL))objc_msgSend)(appLayoutClass, @selector(alloc));
+        id appLayout = ((id (*)(id, SEL, id, long long, long long))objc_msgSend)(
+            allocLayout, layoutSelector, @{ @1: displayItem }, 1, 1);
+        id switcher = ((id (*)(id, SEL))objc_msgSend)(switcherClass, sharedSelector);
+        if (appLayout && [switcher respondsToSelector:addSelector]) {
+            ((void (*)(id, SEL, id))objc_msgSend)(switcher, addSelector, appLayout);
+        }
+    } @catch (__unused NSException *exception) {
     }
 }
 static CGFloat POContentCornerRadius(void) {
@@ -475,6 +504,7 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     BOOL keyboardDismissalPending;
     BOOL keyboardLayerPresent;
     CFTimeInterval keyboardDismissedAt;
+    NSString *hostedSceneIdentifier;
 }
 - (void)viewDidLoad {
     [super viewDidLoad];
@@ -496,6 +526,7 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     keyboardDismissalPending = NO;
     keyboardLayerPresent = NO;
     keyboardDismissedAt = 0;
+    hostedSceneIdentifier = nil;
     [self.session invalidate];
     [self.stack removeFromSuperview];
     [self.externalStack removeFromSuperview];
@@ -517,6 +548,8 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     });
 }
 - (void)stop {
+    NSString *closedBundleId = [self.bundleId copy];
+    NSString *closedSceneIdentifier = [hostedSceneIdentifier copy];
     keyboardDismissalPending = NO;
     keyboardLayerPresent = NO;
     keyboardDismissedAt = 0;
@@ -526,6 +559,8 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     self.stack = nil;
     self.externalStack = nil;
     self.bundleId = nil;
+    hostedSceneIdentifier = nil;
+    POAddApplicationToRecentSwitcher(closedBundleId, closedSceneIdentifier);
 }
 - (void)dismissKeyboard {
     if (!self.externalStack || !keyboardLayerPresent) return;
@@ -578,6 +613,7 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
 - (void)hostSessionController:(POHostSessionController *)controller didPublishScene:(FBScene *)scene
                   sceneStack:(UIView *)stack bundleId:(NSString *)bundle generation:(NSUInteger)generation {
     if (generation != controller.currentGeneration || ![bundle isEqualToString:self.bundleId]) return;
+    hostedSceneIdentifier = [[scene identifier] copy];
     if (self.stack != stack) [self.stack removeFromSuperview];
     self.stack = stack;
     [self.canvas insertSubview:stack atIndex:0];
@@ -588,6 +624,7 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
           externalSceneStack:(UIView *)stack containsKeyboardLayer:(BOOL)keyboard
                     bundleId:(NSString *)bundle generation:(NSUInteger)generation {
     if (generation != controller.currentGeneration || ![bundle isEqualToString:self.bundleId]) return;
+    hostedSceneIdentifier = [[scene identifier] copy];
     keyboardLayerPresent = keyboard;
     if (keyboardDismissalPending && keyboard) {
         CFTimeInterval now = CACurrentMediaTime();
@@ -638,6 +675,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     BOOL draggingHandleVertically;
     CGFloat handleDragStartY;
     NSString *pinnedBundleId;
+    NSString *hostedSceneIdentifier;
     UIView *contextView;
     UIView *externalSceneStack;
     
@@ -744,7 +782,8 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 }
 
 -(void)retainPresentationAfterReleaseIfPossible;
--(void)registerBackgroundSceneForRecentlyClosedBundleIfNeeded:(NSString *)bundleId;
+-(void)registerBackgroundSceneForRecentlyClosedBundleIfNeeded:(NSString *)bundleId
+                                            sceneIdentifier:(NSString *)sceneIdentifier;
 -(BOOL)hasLiveRetainedPresentationForBundleId:(NSString *)bundleId;
 -(UIInterfaceOrientation)cachedPresentationOrientationForBundleId:(NSString *)bundleId;
 -(UIInterfaceOrientation)resolvedHostedOrientationForBundleId:(NSString *)bundleId
@@ -2212,7 +2251,8 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     }
 }
 
--(void)registerBackgroundSceneForRecentlyClosedBundleIfNeeded:(NSString *)bundleId{
+-(void)registerBackgroundSceneForRecentlyClosedBundleIfNeeded:(NSString *)bundleId
+                                            sceneIdentifier:(NSString *)sceneIdentifier{
     if (bundleId.length == 0 ||
         ![POApplicationHelper isUserFacingApplicationBundleId:bundleId]) {
         return;
@@ -2222,6 +2262,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         return;
     }
     [[ContextHostManager sharedInstance] requestSystemDefaultScenePreparationForBundleId:bundleId];
+    POAddApplicationToRecentSwitcher(bundleId, sceneIdentifier);
 }
 
 -(BOOL)hasLiveRetainedPresentationForBundleId:(NSString *)bundleId{
@@ -3343,15 +3384,19 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
                 [self capturePresentationSnapshotIfPossible];
                 [self retainPresentationAfterReleaseIfPossible];
                 NSString *deferredClosedBundleId = [self->hostSession.activeBundleId copy];
+                NSString *deferredClosedSceneId = [self->hostedSceneIdentifier copy];
                 [self->hostSession releaseActiveSessionPreservingPresentation];
-                [self registerBackgroundSceneForRecentlyClosedBundleIfNeeded:deferredClosedBundleId];
+                [self registerBackgroundSceneForRecentlyClosedBundleIfNeeded:deferredClosedBundleId
+                                                             sceneIdentifier:deferredClosedSceneId];
                 [[POSplitSessionController sharedInstance] end];
             });
         } else {
             [self retainPresentationAfterReleaseIfPossible];
             NSString *closedBundleId = [hostSession.activeBundleId copy];
+            NSString *closedSceneId = [hostedSceneIdentifier copy];
             [hostSession releaseActiveSessionPreservingPresentation];
-            [self registerBackgroundSceneForRecentlyClosedBundleIfNeeded:closedBundleId];
+            [self registerBackgroundSceneForRecentlyClosedBundleIfNeeded:closedBundleId
+                                                         sceneIdentifier:closedSceneId];
             [[POSplitSessionController sharedInstance] end];
         }
         [self storeHandlePosition];
@@ -5385,6 +5430,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     keyboardZoomSuppressedForCurrentSession = NO;
     keyboardDismissalPending = NO;
     keyboardDismissedAt = 0;
+    hostedSceneIdentifier = nil;
     [self restoreKeyboardZoomImmediately];
     UIView *oldContextView = contextView;
     if (oldContextView) {
@@ -5463,6 +5509,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     keyboardZoomSuppressedForCurrentSession = NO;
     keyboardDismissalPending = NO;
     keyboardDismissedAt = 0;
+    hostedSceneIdentifier = nil;
     [self restoreKeyboardZoomImmediately];
     keyboardZoomSuspensionReasons = POKeyboardZoomSuspensionNone;
     [self hidePresentationContainer];
@@ -5667,6 +5714,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation
         ![bundleId isEqualToString:controller.requestedBundleId]) {
         return;
     }
+    hostedSceneIdentifier = [[scene identifier] copy];
 
     BOOL usesIOS15LiveRuntimeScenePublication =
         NSProcessInfo.processInfo.operatingSystemVersion.majorVersion == 15 &&
