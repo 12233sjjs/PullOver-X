@@ -1196,7 +1196,9 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     CGPoint primaryWindowPoint = [self.handle convertPoint:CGPointMake(CGRectGetMidX(self.handle.bounds), CGRectGetMidY(self.handle.bounds)) toView:self.view.window];
     CGPoint oppositeWindowPoint = [oppositeHandle convertPoint:CGPointMake(CGRectGetMidX(oppositeHandle.bounds), CGRectGetMidY(oppositeHandle.bounds)) toView:self.view.window];
     BOOL primaryScreenLeft = primaryWindowPoint.x < oppositeWindowPoint.x;
-    self.handle.opacityPreferenceKey = primaryScreenLeft ? @"leftHandleOpacity" : @"rightHandleOpacity";
+    self.handle.opacityPreferenceKey = self.handle.isNubbed
+        ? @"rightHandleOpacity"
+        : (primaryScreenLeft ? @"leftHandleOpacity" : @"rightHandleOpacity");
     oppositeHandle.opacityPreferenceKey = primaryScreenLeft ? @"rightHandleOpacity" : @"leftHandleOpacity";
     [self keepMainHandleInsideLandscapeSafeArea];
     CGFloat wheelDiameter = POCenterWheelDiameter(self.view);
