@@ -355,7 +355,7 @@ static NSArray<NSDictionary *> *POCenterActions(void) {
         actions = @[
             @{@"title":@"搜索应用", @"icon":@"magnifyingglass"},
             @{@"title":@"结束播放应用", @"icon":@"speaker.slash"},
-            @{@"title":@"切换 VPN", @"icon":@"network"},
+            @{@"title":@"截图", @"icon":@"camera.viewfinder"},
             @{@"title":@"重载窗口", @"icon":@"arrow.clockwise"},
             @{@"title":@"通知中心", @"icon":@"bell"},
             @{@"title":@"切换 Wi-Fi", @"icon":@"wifi"},
@@ -1208,21 +1208,19 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     if (!primaryWindowTools) {
         primaryWindowTools = [self windowToolsWithSymbols:@[
             @"arrow.up.left.and.arrow.down.right", @"arrow.uturn.backward",
-            @"camera.viewfinder", @"network", @"arrow.clockwise", @"rotate.right", @"xmark"]
-            labels:@[@"全屏打开第一窗口", @"返回上一个窗口", @"截图", @"切换 VPN",
+            @"camera.viewfinder", @"arrow.clockwise", @"rotate.right", @"xmark"]
+            labels:@[@"全屏打开第一窗口", @"返回上一个窗口", @"截图",
                      @"重新加载第一窗口", @"旋转窗口", @"关闭第一窗口"]
             selectors:@[@"fullscreenPrimaryWindow", @"returnPreviousWindow",
-                        @"takeScreenshot", @"toggleVPN", @"reloadPrimaryWindow",
-                        @"rotateHostedWindow", @"close"]];
+                        @"takeScreenshot", @"reloadPrimaryWindow", @"rotateHostedWindow", @"close"]];
         secondaryWindowTools = [self windowToolsWithSymbols:@[
             @"arrow.up.left.and.arrow.down.right", @"arrow.uturn.backward",
-            @"camera.viewfinder", @"network", @"arrow.left.arrow.right", @"arrow.clockwise",
-            @"rotate.right", @"xmark"]
-            labels:@[@"全屏打开第二窗口", @"返回上一个窗口", @"截图", @"切换 VPN",
+            @"camera.viewfinder", @"arrow.left.arrow.right", @"arrow.clockwise", @"rotate.right", @"xmark"]
+            labels:@[@"全屏打开第二窗口", @"返回上一个窗口", @"截图",
                      @"交换两个窗口", @"重新加载第二窗口", @"旋转窗口", @"关闭第二窗口"]
             selectors:@[@"fullscreenSecondWindow", @"returnPreviousSecondWindow",
-                        @"takeScreenshot", @"toggleVPN", @"swapWindows",
-                        @"reloadSecondWindow", @"rotateHostedWindow", @"closeSecondWindow"]];
+                        @"takeScreenshot", @"swapWindows", @"reloadSecondWindow",
+                        @"rotateHostedWindow", @"closeSecondWindow"]];
     }
     BOOL visible = panelState == POPanelStateOpen && !keyboardZoomContainer.hidden &&
         !presentedQuickSwitchMenu && !appSearchNavigation;
@@ -1288,6 +1286,13 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 
 -(void)openSecondWindow:(NSString *)bundle{
     if (![POApplicationHelper isUserFacingApplicationBundleId:bundle] || panelState == POPanelStateClosed) return;
+    UIInterfaceOrientation systemOrientation = [[ContextHostManager sharedInstance] currentSystemInterfaceOrientation];
+    if (UIInterfaceOrientationIsLandscape(systemOrientation) ||
+        UIInterfaceOrientationIsLandscape([self resolvedHostedLayoutOrientation])) {
+        [self closeSecondWindow];
+        [self showCenterMessage:@"横屏时不使用第二窗口。"];
+        return;
+    }
     if ([bundle isEqualToString:hostSession.activeBundleId] || [bundle isEqualToString:pinnedBundleId]) {
         [self showCenterMessage:@"该应用已在第一窗口中打开。"]; return;
     }
@@ -1466,7 +1471,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         return;
     }
     if (action == 2) {
-        [self toggleVPN];
+        [self takeScreenshot];
         return;
     }
     if (action >= 4) {
@@ -4388,47 +4393,6 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     [self showCenterMessage:@"当前系统不支持截图操作。"];
 }
 
--(void)toggleVPN{
-    dlopen("/System/Library/PreferenceBundles/VPNPreferences.bundle/VPNPreferences", RTLD_LAZY);
-    @try {
-        id controller = [[NSClassFromString(@"VPNController") alloc] init];
-        SEL specs = NSSelectorFromString(@"specifiers");
-        NSArray *specifiers = [controller respondsToSelector:specs]
-            ? ((id (*)(id, SEL))objc_msgSend)(controller, specs) : nil;
-        id target = nil;
-        for (id specifier in specifiers) {
-            SEL cellType = NSSelectorFromString(@"cellType");
-            if ([specifier respondsToSelector:cellType] &&
-                ((NSInteger (*)(id, SEL))objc_msgSend)(specifier, cellType) == 1) {
-                target = specifier;
-                break;
-            }
-        }
-        if (!target) { [self showCenterMessage:@"未找到已配置的 VPN。"]; return; }
-        NSArray *getters = @[@"getPersonalConnectionStateForSpecifier:", @"getEnterpriseConnectionStateForSpecifier:"];
-        NSArray *setters = @[@"setPersonalVPNActive:specifier:", @"setEnterpriseVPNActive:specifier:"];
-        BOOL active = NO;
-        for (NSString *name in getters) {
-            SEL selector = NSSelectorFromString(name);
-            if ([controller respondsToSelector:selector]) {
-                id value = ((id (*)(id, SEL, id))objc_msgSend)(controller, selector, target);
-                active |= [value respondsToSelector:@selector(boolValue)] && [value boolValue];
-            }
-        }
-        BOOL supported = NO;
-        for (NSString *name in setters) {
-            SEL selector = NSSelectorFromString(name);
-            if ([controller respondsToSelector:selector]) {
-                ((void (*)(id, SEL, BOOL, id))objc_msgSend)(controller, selector, !active, target);
-                supported = YES;
-            }
-        }
-        [self showCenterMessage:supported ? @"已发送 VPN 切换请求。" : @"当前系统不支持此 VPN 操作。"];
-    } @catch (__unused NSException *exception) {
-        [self showCenterMessage:@"无法切换 VPN，请检查系统 VPN 配置。"];
-    }
-}
-
 -(void)dismissHostedKeyboard{
     if (panelState != POPanelStateOpen || !externalSceneStack ||
         externalSceneStack.superview != self.contentView ||
@@ -5699,6 +5663,10 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation
     if (![bundleId isEqualToString:controller.requestedBundleId] || generation != controller.currentGeneration ||
         panelState == POPanelStateClosed || panelState == POPanelStateClosing) {
         return;
+    }
+    if (UIInterfaceOrientationIsLandscape(orientation) && secondWindow) {
+        [self closeSecondWindow];
+        [self layoutWindowControls];
     }
     BOOL layoutOrientationKnown = hostedLayoutOrientation == UIInterfaceOrientationPortrait ||
         hostedLayoutOrientation == UIInterfaceOrientationPortraitUpsideDown ||

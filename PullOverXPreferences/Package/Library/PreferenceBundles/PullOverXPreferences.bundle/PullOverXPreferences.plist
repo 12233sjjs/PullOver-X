@@ -333,7 +333,7 @@
 			<key>validValues</key>
 			<array><integer>0</integer><integer>1</integer><integer>2</integer><integer>3</integer><integer>4</integer><integer>5</integer><integer>6</integer><integer>7</integer><integer>8</integer></array>
 			<key>validTitles</key>
-			<array><string>搜索应用</string><string>结束播放应用</string><string>切换 VPN</string><string>重载窗口</string><string>通知中心</string><string>切换 Wi-Fi</string><string>蜂窝数据</string><string>手电筒</string><string>注销 SpringBoard</string></array>
+			<array><string>搜索应用</string><string>结束播放应用</string><string>截图</string><string>重载窗口</string><string>通知中心</string><string>切换 Wi-Fi</string><string>蜂窝数据</string><string>手电筒</string><string>注销 SpringBoard</string></array>
 		</dict>
 		<dict>
 			<key>cell</key><string>PSLinkListCell</string>
@@ -347,7 +347,7 @@
 			<key>validValues</key>
 			<array><integer>0</integer><integer>1</integer><integer>2</integer><integer>3</integer><integer>4</integer><integer>5</integer><integer>6</integer><integer>7</integer><integer>8</integer></array>
 			<key>validTitles</key>
-			<array><string>搜索应用</string><string>结束播放应用</string><string>切换 VPN</string><string>重载窗口</string><string>通知中心</string><string>切换 Wi-Fi</string><string>蜂窝数据</string><string>手电筒</string><string>注销 SpringBoard</string></array>
+			<array><string>搜索应用</string><string>结束播放应用</string><string>截图</string><string>重载窗口</string><string>通知中心</string><string>切换 Wi-Fi</string><string>蜂窝数据</string><string>手电筒</string><string>注销 SpringBoard</string></array>
 		</dict>
 		<dict>
 			<key>cell</key><string>PSLinkListCell</string>
@@ -361,7 +361,7 @@
 			<key>validValues</key>
 			<array><integer>0</integer><integer>1</integer><integer>2</integer><integer>3</integer><integer>4</integer><integer>5</integer><integer>6</integer><integer>7</integer><integer>8</integer></array>
 			<key>validTitles</key>
-			<array><string>搜索应用</string><string>结束播放应用</string><string>切换 VPN</string><string>重载窗口</string><string>通知中心</string><string>切换 Wi-Fi</string><string>蜂窝数据</string><string>手电筒</string><string>注销 SpringBoard</string></array>
+			<array><string>搜索应用</string><string>结束播放应用</string><string>截图</string><string>重载窗口</string><string>通知中心</string><string>切换 Wi-Fi</string><string>蜂窝数据</string><string>手电筒</string><string>注销 SpringBoard</string></array>
 		</dict>
 		<dict>
 			<key>cell</key><string>PSLinkListCell</string>
@@ -375,7 +375,7 @@
 			<key>validValues</key>
 			<array><integer>0</integer><integer>1</integer><integer>2</integer><integer>3</integer><integer>4</integer><integer>5</integer><integer>6</integer><integer>7</integer><integer>8</integer></array>
 			<key>validTitles</key>
-			<array><string>搜索应用</string><string>结束播放应用</string><string>切换 VPN</string><string>重载窗口</string><string>通知中心</string><string>切换 Wi-Fi</string><string>蜂窝数据</string><string>手电筒</string><string>注销 SpringBoard</string></array>
+			<array><string>搜索应用</string><string>结束播放应用</string><string>截图</string><string>重载窗口</string><string>通知中心</string><string>切换 Wi-Fi</string><string>蜂窝数据</string><string>手电筒</string><string>注销 SpringBoard</string></array>
 		</dict>
 		<dict>
 			<key>cell</key><string>PSLinkListCell</string>
@@ -389,7 +389,7 @@
 			<key>validValues</key>
 			<array><integer>0</integer><integer>1</integer><integer>2</integer><integer>3</integer><integer>4</integer><integer>5</integer><integer>6</integer><integer>7</integer><integer>8</integer></array>
 			<key>validTitles</key>
-			<array><string>搜索应用</string><string>结束播放应用</string><string>切换 VPN</string><string>重载窗口</string><string>通知中心</string><string>切换 Wi-Fi</string><string>蜂窝数据</string><string>手电筒</string><string>注销 SpringBoard</string></array>
+			<array><string>搜索应用</string><string>结束播放应用</string><string>截图</string><string>重载窗口</string><string>通知中心</string><string>切换 Wi-Fi</string><string>蜂窝数据</string><string>手电筒</string><string>注销 SpringBoard</string></array>
 		</dict>
 		<dict>
 			<key>cell</key><string>PSLinkListCell</string>
@@ -403,7 +403,7 @@
 			<key>validValues</key>
 			<array><integer>0</integer><integer>1</integer><integer>2</integer><integer>3</integer><integer>4</integer><integer>5</integer><integer>6</integer><integer>7</integer><integer>8</integer></array>
 			<key>validTitles</key>
-			<array><string>搜索应用</string><string>结束播放应用</string><string>切换 VPN</string><string>重载窗口</string><string>通知中心</string><string>切换 Wi-Fi</string><string>蜂窝数据</string><string>手电筒</string><string>注销 SpringBoard</string></array>
+			<array><string>搜索应用</string><string>结束播放应用</string><string>截图</string><string>重载窗口</string><string>通知中心</string><string>切换 Wi-Fi</string><string>蜂窝数据</string><string>手电筒</string><string>注销 SpringBoard</string></array>
 		</dict>
 		<dict>
 			<key>cell</key><string>PSLinkListCell</string>
@@ -417,7 +417,7 @@
 			<key>validValues</key>
 			<array><integer>0</integer><integer>1</integer><integer>2</integer><integer>3</integer><integer>4</integer><integer>5</integer><integer>6</integer><integer>7</integer><integer>8</integer></array>
 			<key>validTitles</key>
-			<array><string>搜索应用</string><string>结束播放应用</string><string>切换 VPN</string><string>重载窗口</string><string>通知中心</string><string>切换 Wi-Fi</string><string>蜂窝数据</string><string>手电筒</string><string>注销 SpringBoard</string></array>
+			<array><string>搜索应用</string><string>结束播放应用</string><string>截图</string><string>重载窗口</string><string>通知中心</string><string>切换 Wi-Fi</string><string>蜂窝数据</string><string>手电筒</string><string>注销 SpringBoard</string></array>
 		</dict>
 		<dict>
 			<key>cell</key><string>PSLinkListCell</string>
@@ -431,7 +431,7 @@
 			<key>validValues</key>
 			<array><integer>0</integer><integer>1</integer><integer>2</integer><integer>3</integer><integer>4</integer><integer>5</integer><integer>6</integer><integer>7</integer><integer>8</integer></array>
 			<key>validTitles</key>
-			<array><string>搜索应用</string><string>结束播放应用</string><string>切换 VPN</string><string>重载窗口</string><string>通知中心</string><string>切换 Wi-Fi</string><string>蜂窝数据</string><string>手电筒</string><string>注销 SpringBoard</string></array>
+			<array><string>搜索应用</string><string>结束播放应用</string><string>截图</string><string>重载窗口</string><string>通知中心</string><string>切换 Wi-Fi</string><string>蜂窝数据</string><string>手电筒</string><string>注销 SpringBoard</string></array>
 		</dict>
 		<dict>
 			<key>cell</key><string>PSGroupCell</string>
