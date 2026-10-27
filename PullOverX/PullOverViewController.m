@@ -1133,7 +1133,17 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     CGFloat maximumY = MAX(minimumY, CGRectGetHeight(self.view.bounds) -
         self.view.safeAreaInsets.bottom - size / 2 - HANDLE_EDGE_GAP);
     BOOL primaryOnLeft = primaryCenter.x < CGRectGetMidX(self.view.bounds);
-    CGFloat oppositeX = primaryOnLeft ? CGRectGetWidth(self.view.bounds) - size - HANDLE_EDGE_GAP : HANDLE_EDGE_GAP;
+    CGFloat landscapeSideInset = 0;
+    if (CGRectGetWidth(self.view.bounds) > CGRectGetHeight(self.view.bounds)) {
+        UIEdgeInsets viewInsets = self.view.safeAreaInsets;
+        UIEdgeInsets windowInsets = self.view.window.safeAreaInsets;
+        landscapeSideInset = MAX(MAX(viewInsets.left, viewInsets.right),
+                                 MAX(windowInsets.left, windowInsets.right));
+    }
+    CGFloat oppositeEdgeGap = MAX(HANDLE_EDGE_GAP, landscapeSideInset + HANDLE_EDGE_GAP);
+    CGFloat oppositeX = primaryOnLeft
+        ? CGRectGetWidth(self.view.bounds) - size - oppositeEdgeGap
+        : oppositeEdgeGap;
     oppositeHandle.restingOriginX = oppositeX;
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     NSNumber *primaryRatio = [defaults objectForKey:@"primaryHandleVerticalRatio"];
