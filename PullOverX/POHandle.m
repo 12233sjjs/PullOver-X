@@ -16,7 +16,9 @@
 #define PO_HANDLE_MAXIMUM_SIZE 50.0
 #define PO_HANDLE_DEFAULT_NUB_HIDDEN_PERCENTAGE 70.0
 #define PO_HANDLE_MAXIMUM_NUB_HIDDEN_PERCENTAGE 100.0
-#define PO_HANDLE_MINIMUM_TOUCH_SIZE 52.0
+#define PO_HANDLE_DEFAULT_TRIGGER_SIZE 52.0
+#define PO_HANDLE_MINIMUM_TRIGGER_SIZE 44.0
+#define PO_HANDLE_MAXIMUM_TRIGGER_SIZE 120.0
 
 @interface POHandle () <UIGestureRecognizerDelegate> {
     UILabel *messageLabel;
@@ -41,6 +43,13 @@
         size = PO_HANDLE_DEFAULT_SIZE;
     }
     return MIN(MAX(size, PO_HANDLE_MINIMUM_SIZE), PO_HANDLE_MAXIMUM_SIZE);
+}
+
+-(CGFloat)handleTriggerSize{
+    id configuredValue = [POApplicationHelper settings][@"handleHitArea"];
+    CGFloat size = configuredValue ? [configuredValue doubleValue] : PO_HANDLE_DEFAULT_TRIGGER_SIZE;
+    if (!isfinite(size) || size <= 0) size = PO_HANDLE_DEFAULT_TRIGGER_SIZE;
+    return MIN(MAX(round(size), PO_HANDLE_MINIMUM_TRIGGER_SIZE), PO_HANDLE_MAXIMUM_TRIGGER_SIZE);
 }
 
 -(CGFloat)nubHiddenPercentage{
@@ -229,9 +238,10 @@
 }
 
 -(BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event{
+    CGFloat triggerSize = [self handleTriggerSize];
     if (self.layoutMode == POHandleLayoutModeLandscapeFixedBottomLeft) {
-        CGFloat horizontalInset = MAX(5.0, (PO_HANDLE_MINIMUM_TOUCH_SIZE - CGRectGetWidth(self.bounds)) / 2.0);
-        CGFloat verticalInset = MAX(5.0, (PO_HANDLE_MINIMUM_TOUCH_SIZE - CGRectGetHeight(self.bounds)) / 2.0);
+        CGFloat horizontalInset = MAX(5.0, (triggerSize - CGRectGetWidth(self.bounds)) / 2.0);
+        CGFloat verticalInset = MAX(5.0, (triggerSize - CGRectGetHeight(self.bounds)) / 2.0);
         CGRect hitRect = CGRectInset(self.bounds, -horizontalInset, -verticalInset);
         return CGRectContainsPoint(hitRect, point);
     }
@@ -241,9 +251,9 @@
         containerWidth = 50.0;
     }
 
-    CGFloat desiredHitLeftInContainer = containerWidth - PO_HANDLE_MINIMUM_TOUCH_SIZE;
+    CGFloat desiredHitLeftInContainer = containerWidth - triggerSize;
     CGFloat leadingInset = MAX(5.0, CGRectGetMinX(self.frame) - desiredHitLeftInContainer);
-    CGFloat verticalInset = MAX(5.0, (PO_HANDLE_MINIMUM_TOUCH_SIZE - CGRectGetHeight(self.bounds)) / 2.0);
+    CGFloat verticalInset = MAX(5.0, (triggerSize - CGRectGetHeight(self.bounds)) / 2.0);
     CGRect hitRect = CGRectMake(-leadingInset,
                                 -verticalInset,
                                 CGRectGetWidth(self.bounds) + leadingInset + 5.0,

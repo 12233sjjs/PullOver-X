@@ -841,7 +841,6 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 -(void)showAppSearch;
 -(void)dismissAppSearch;
 -(void)layoutAdditionalControls;
--(void)keepMainHandleInsideLandscapeSafeArea;
 -(void)layoutWindowControls;
 -(void)openSecondWindow:(NSString *)bundle;
 -(void)closeSecondWindow;
@@ -1125,31 +1124,6 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     [self layoutAdditionalControls];
 }
 
--(void)keepMainHandleInsideLandscapeSafeArea{
-    CGRect bounds = self.view.bounds;
-    if (CGRectGetWidth(bounds) <= CGRectGetHeight(bounds) || !self.handle) return;
-    CGRect handleRect = [self.handle convertRect:self.handle.bounds toView:self.view];
-    CGRect visibleRect = CGRectIntersection(handleRect, bounds);
-    if (CGRectIsEmpty(visibleRect)) return;
-    UIEdgeInsets viewInsets = self.view.safeAreaInsets;
-    UIEdgeInsets windowInsets = self.view.window.safeAreaInsets;
-    CGFloat leftInset = MAX(viewInsets.left, windowInsets.left) + HANDLE_EDGE_GAP;
-    CGFloat rightInset = MAX(viewInsets.right, windowInsets.right) + HANDLE_EDGE_GAP;
-    CGFloat horizontalShift = 0;
-    if (CGRectGetMidX(handleRect) < CGRectGetMidX(bounds)) {
-        if (CGRectGetMinX(visibleRect) < leftInset) {
-            horizontalShift = leftInset - CGRectGetMinX(visibleRect);
-        }
-    } else if (CGRectGetMaxX(visibleRect) > CGRectGetWidth(bounds) - rightInset) {
-        horizontalShift = (CGRectGetWidth(bounds) - rightInset) - CGRectGetMaxX(visibleRect);
-    }
-    if (fabs(horizontalShift) > 0.5) {
-        CGRect railFrame = handleScrollView.frame;
-        railFrame.origin.x += horizontalShift;
-        handleScrollView.frame = railFrame;
-    }
-}
-
 -(void)layoutAdditionalControls{
     if (!oppositeHandle || !self.handle || CGRectIsEmpty(self.view.bounds)) return;
     oppositeHandle.hidden = panelState != POPanelStateClosed;
@@ -1196,11 +1170,8 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     CGPoint primaryWindowPoint = [self.handle convertPoint:CGPointMake(CGRectGetMidX(self.handle.bounds), CGRectGetMidY(self.handle.bounds)) toView:self.view.window];
     CGPoint oppositeWindowPoint = [oppositeHandle convertPoint:CGPointMake(CGRectGetMidX(oppositeHandle.bounds), CGRectGetMidY(oppositeHandle.bounds)) toView:self.view.window];
     BOOL primaryScreenLeft = primaryWindowPoint.x < oppositeWindowPoint.x;
-    self.handle.opacityPreferenceKey = self.handle.isNubbed
-        ? @"rightHandleOpacity"
-        : (primaryScreenLeft ? @"leftHandleOpacity" : @"rightHandleOpacity");
+    self.handle.opacityPreferenceKey = primaryScreenLeft ? @"leftHandleOpacity" : @"rightHandleOpacity";
     oppositeHandle.opacityPreferenceKey = primaryScreenLeft ? @"rightHandleOpacity" : @"leftHandleOpacity";
-    [self keepMainHandleInsideLandscapeSafeArea];
     CGFloat wheelDiameter = POCenterWheelDiameter(self.view);
     CGSize previewSize = CGSizeMake(wheelDiameter + 24, wheelDiameter + 24);
     if (!CGSizeEqualToSize(handleCenterMenu.view.bounds.size, previewSize)) {
@@ -3325,7 +3296,6 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     handleFrame.origin.x = 0;
     handleFrame.origin.y = desiredScreenY - CGRectGetMinY(handleScrollView.frame);
     self.handle.frame = handleFrame;
-    [self keepMainHandleInsideLandscapeSafeArea];
 }
 
 -(CGFloat)currentHandleScreenY{
