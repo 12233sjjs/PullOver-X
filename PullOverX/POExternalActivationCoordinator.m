@@ -9,6 +9,27 @@
 
 typedef void (^POExternalOpenCompletion)(NSError *error);
 
+static BOOL POExternalDeviceIsLocked(void) {
+    Class lockScreenManagerClass = objc_getClass("SBLockScreenManager");
+    SEL sharedIfExistsSelector = NSSelectorFromString(@"sharedInstanceIfExists");
+    SEL sharedSelector = NSSelectorFromString(@"sharedInstance");
+    id manager = nil;
+    if ([lockScreenManagerClass respondsToSelector:sharedIfExistsSelector]) {
+        manager = ((id (*)(id, SEL))objc_msgSend)(lockScreenManagerClass, sharedIfExistsSelector);
+    }
+    if (!manager && [lockScreenManagerClass respondsToSelector:sharedSelector]) {
+        manager = ((id (*)(id, SEL))objc_msgSend)(lockScreenManagerClass, sharedSelector);
+    }
+    for (NSString *selectorName in @[@"isUILocked", @"isLockScreenVisible"]) {
+        SEL selector = NSSelectorFromString(selectorName);
+        if ([manager respondsToSelector:selector] &&
+            ((BOOL (*)(id, SEL))objc_msgSend)(manager, selector)) {
+            return YES;
+        }
+    }
+    return !UIApplication.sharedApplication.protectedDataAvailable;
+}
+
 static id POExternalReadObject(id object, SEL selector) {
     if (!object || !selector || ![object respondsToSelector:selector]) {
         return nil;
@@ -373,20 +394,16 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
     if (!NSThread.isMainThread || !request || ![POApplicationHelper isEnabled]) {
         return completion;
     }
+    if (POExternalDeviceIsLocked()) {
+        return completion;
+    }
 
     NSString *targetBundleId = POExternalTargetBundleIdentifierFromRequest(request);
     if ([self isExplicitNativeActivation:targetBundleId]) return completion;
     id clientProcess = POExternalReadObject(request, NSSelectorFromString(@"clientProcess"));
-    if (POExternalIsNotificationLaunch(request, POExternalOpenOptions(request)) ||
-        POExternalValueHasNotificationMarker(clientProcess, 0)) {
-        if (!POExternalIsUserApplicationBundleIdentifier(targetBundleId)) {
-            return completion;
-        }
-        POXWindow *pullOverWindow = (POXWindow *)[POXWindow sharedWindow];
-        if (pullOverWindow.controller.isPanelActive ||
-            [targetBundleId isEqualToString:[POApplicationHelper frontMostBundleId]]) {
-            [pullOverWindow.controller prepareForNativeApplicationTakeover:targetBundleId];
-        }
+    BOOL notificationLaunch = POExternalIsNotificationLaunch(request, POExternalOpenOptions(request)) ||
+        POExternalValueHasNotificationMarker(clientProcess, 0);
+    if (notificationLaunch && !POExternalIsUserApplicationBundleIdentifier(targetBundleId)) {
         return completion;
     }
 
@@ -425,7 +442,7 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
             documentOpenRequest && openURL.isFileURL && directSourceIsBroker &&
             payloadAttributableToHostedFlow;
 
-        if (directHostedSource || payloadHostedBroker || brokeredDocumentFromPullOver ||
+        if (notificationLaunch || directHostedSource || payloadHostedBroker || brokeredDocumentFromPullOver ||
             POExternalIsUserApplicationBundleIdentifier(directSourceBundleId) ||
             POExternalIsUserApplicationBundleIdentifier(payloadSourceBundleId)) {
             NSString *sourceBundleId = hostedBundleId;
@@ -442,7 +459,7 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
             }
 
             BOOL isTrusted = ((BOOL (*)(id, SEL))objc_msgSend)(request, trustedSelector);
-            if (!isTrusted && !directHostedSource) {
+            if (!isTrusted && !directHostedSource && !notificationLaunch) {
                 return completion;
             }
             if (!POExternalPrepareSuspendedOpenRequest(request)) {
@@ -483,13 +500,16 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
 
     NSString *nativeSourceBundleId = POExternalAttributedUserSourceBundleIdentifier(
         directSourceBundleId, payloadSourceBundleId, openURL, documentOpenRequest);
+    if (notificationLaunch && nativeSourceBundleId.length == 0) {
+        nativeSourceBundleId = @"com.apple.springboard";
+    }
     SEL trustedSelector = NSSelectorFromString(@"isTrusted");
     if (!POExternalIsUserApplicationBundleIdentifier(targetBundleId) ||
         nativeSourceBundleId.length == 0 ||
         [targetBundleId isEqualToString:nativeSourceBundleId] ||
         !POExternalPullOverIsStableClosed() ||
         ![request respondsToSelector:trustedSelector] ||
-        !((BOOL (*)(id, SEL))objc_msgSend)(request, trustedSelector) ||
+        (!((BOOL (*)(id, SEL))objc_msgSend)(request, trustedSelector) && !notificationLaunch) ||
         !POExternalCanPrepareSuspendedOpenRequest(request)) {
         return completion;
     }
@@ -527,6 +547,9 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
     if (!NSThread.isMainThread || !application || !options || ![POApplicationHelper isEnabled]) {
         return options;
     }
+    if (POExternalDeviceIsLocked()) {
+        return options;
+    }
 
 
     NSString *targetBundleId = [application isKindOfClass:[NSString class]]
@@ -537,14 +560,7 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
         return options;
     }
 
-    if (POExternalIsNotificationLaunch(origin, options)) {
-        POXWindow *pullOverWindow = (POXWindow *)[POXWindow sharedWindow];
-        if (pullOverWindow.controller.isPanelActive ||
-            [targetBundleId isEqualToString:[POApplicationHelper frontMostBundleId]]) {
-            [pullOverWindow.controller prepareForNativeApplicationTakeover:targetBundleId];
-        }
-        return options;
-    }
+    BOOL notificationLaunch = POExternalIsNotificationLaunch(origin, options);
 
     NSURL *openURL = POExternalURLFromOptions(options);
     if (!POExternalIsValidURL(openURL) &&
@@ -572,7 +588,7 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
         BOOL payloadAttributableToHostedFlow = payloadSourceBundleId.length == 0 ||
             payloadHostedSource || payloadSourceIsBroker;
 
-        if (originIsUserApplication || payloadHostedSource ||
+        if (notificationLaunch || originIsUserApplication || payloadHostedSource ||
             (documentOpenRequest && openURL.isFileURL && originIsBroker && payloadAttributableToHostedFlow)) {
             id preparedOptions = POExternalOptionsByAddingActivateSuspended(options);
             if (!preparedOptions) {
@@ -614,6 +630,9 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
 
     NSString *nativeSourceBundleId = POExternalAttributedUserSourceBundleIdentifier(
         originBundleId, payloadSourceBundleId, openURL, documentOpenRequest);
+    if (notificationLaunch && nativeSourceBundleId.length == 0) {
+        nativeSourceBundleId = @"com.apple.springboard";
+    }
     if (!POExternalIsUserApplicationBundleIdentifier(targetBundleId) ||
         nativeSourceBundleId.length == 0 ||
         [targetBundleId isEqualToString:nativeSourceBundleId] ||
@@ -727,6 +746,11 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
         if (![self isNativeRouteGenerationCurrent:generation]) {
             return;
         }
+        if (POExternalDeviceIsLocked()) {
+            [self restoreNativeTargetBundleId:targetBundleId
+                                   generation:generation];
+            return;
+        }
         POXWindow *pullOverWindow = (POXWindow *)[POXWindow sharedWindow];
         BOOL accepted = [pullOverWindow.controller
             openExternallyActivatedApplicationInPullOver:targetBundleId];
@@ -741,6 +765,9 @@ static BOOL POExternalTransitionContainsBundleIdentifier(id transitionRequest,
 
 - (void)prepareNativeTakeoverForTransitionRequestIfNeeded:(id)transitionRequest {
     if (!NSThread.isMainThread || !transitionRequest || ![POApplicationHelper isEnabled]) {
+        return;
+    }
+    if (POExternalDeviceIsLocked()) {
         return;
     }
 
