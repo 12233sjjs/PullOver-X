@@ -514,6 +514,7 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
 - (void)openBundle:(NSString *)bundle;
 - (void)openBundle:(NSString *)bundle recordHistory:(BOOL)recordHistory;
 - (void)returnToPreviousBundle;
+- (void)returnToForwardBundle;
 - (void)stop;
 - (void)dismissKeyboard;
 - (void)allowKeyboard;
@@ -526,6 +527,7 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     CFTimeInterval keyboardDismissedAt;
     NSString *hostedSceneIdentifier;
     NSMutableArray<NSString *> *bundleHistory;
+    NSMutableArray<NSString *> *forwardHistory;
 }
 - (void)viewDidLoad {
     [super viewDidLoad];
@@ -554,6 +556,7 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
         [POApplicationHelper isUserFacingApplicationBundleId:previousBundleId]) {
         [bundleHistory addObject:previousBundleId];
         if (bundleHistory.count > 20) [bundleHistory removeObjectAtIndex:0];
+        [forwardHistory removeAllObjects];
     }
     keyboardDismissalPending = NO;
     keyboardLayerPresent = NO;
@@ -588,6 +591,21 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     }
     if (!bundle) return;
     [bundleHistory removeLastObject];
+    if (!forwardHistory) forwardHistory = [NSMutableArray array];
+    if (self.bundleId.length) [forwardHistory addObject:self.bundleId];
+    [self openBundle:bundle recordHistory:NO];
+}
+- (void)returnToForwardBundle {
+    NSString *bundle = forwardHistory.lastObject;
+    while (bundle && (![POApplicationHelper isUserFacingApplicationBundleId:bundle] ||
+                      [bundle isEqualToString:self.bundleId])) {
+        [forwardHistory removeLastObject];
+        bundle = forwardHistory.lastObject;
+    }
+    if (!bundle) return;
+    [forwardHistory removeLastObject];
+    if (!bundleHistory) bundleHistory = [NSMutableArray array];
+    if (self.bundleId.length) [bundleHistory addObject:self.bundleId];
     [self openBundle:bundle recordHistory:NO];
 }
 - (void)stop {
@@ -606,6 +624,7 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     self.bundleId = nil;
     hostedSceneIdentifier = nil;
     [bundleHistory removeAllObjects];
+    [forwardHistory removeAllObjects];
 }
 - (void)dismissKeyboard {
     if (!self.externalStack || !keyboardLayerPresent) return;
@@ -713,6 +732,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     CGFloat handleDragStartY;
     NSString *pinnedBundleId;
     NSMutableArray<NSString *> *windowBundleHistory;
+    NSMutableArray<NSString *> *windowForwardHistory;
     BOOL restoringPreviousWindow;
     NSString *hostedSceneIdentifier;
     UIView *contextView;
@@ -1006,6 +1026,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     keyboardZoomSuppressedForCurrentSession = NO;
     keyboardDismissalPending = NO;
     windowBundleHistory = [NSMutableArray array];
+    windowForwardHistory = [NSMutableArray array];
     appliedCardScale = 1.0;
     closingFrozenCardScale = 1.0;
     scaledProgrammaticCloseAnimating = NO;
@@ -1207,18 +1228,18 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 -(void)layoutWindowControls{
     if (!primaryWindowTools) {
         primaryWindowTools = [self windowToolsWithSymbols:@[
-            @"arrow.up.left.and.arrow.down.right", @"arrow.uturn.backward",
+            @"arrow.up.left.and.arrow.down.right", @"arrow.uturn.backward", @"arrow.uturn.forward",
             @"camera.viewfinder", @"arrow.clockwise", @"rotate.right", @"xmark"]
-            labels:@[@"全屏打开第一窗口", @"返回上一个窗口", @"截图",
-                     @"重新加载第一窗口", @"旋转窗口", @"关闭第一窗口"]
-            selectors:@[@"fullscreenPrimaryWindow", @"returnPreviousWindow",
+            labels:@[@"全屏打开第一窗口", @"返回上一个窗口", @"前进到下一个窗口", @"截图",
+                     @"重开第一窗口应用", @"旋转窗口", @"关闭第一窗口"]
+            selectors:@[@"fullscreenPrimaryWindow", @"returnPreviousWindow", @"returnForwardWindow",
                         @"takeScreenshot", @"reloadPrimaryWindow", @"rotateHostedWindow", @"close"]];
         secondaryWindowTools = [self windowToolsWithSymbols:@[
-            @"arrow.up.left.and.arrow.down.right", @"arrow.uturn.backward",
+            @"arrow.up.left.and.arrow.down.right", @"arrow.uturn.backward", @"arrow.uturn.forward",
             @"camera.viewfinder", @"arrow.left.arrow.right", @"arrow.clockwise", @"rotate.right", @"xmark"]
-            labels:@[@"全屏打开第二窗口", @"返回上一个窗口", @"截图",
-                     @"交换两个窗口", @"重新加载第二窗口", @"旋转窗口", @"关闭第二窗口"]
-            selectors:@[@"fullscreenSecondWindow", @"returnPreviousSecondWindow",
+            labels:@[@"全屏打开第二窗口", @"返回上一个窗口", @"前进到下一个窗口", @"截图",
+                     @"交换两个窗口", @"重开第二窗口应用", @"旋转窗口", @"关闭第二窗口"]
+            selectors:@[@"fullscreenSecondWindow", @"returnPreviousSecondWindow", @"returnForwardSecondWindow",
                         @"takeScreenshot", @"swapWindows", @"reloadSecondWindow",
                         @"rotateHostedWindow", @"closeSecondWindow"]];
     }
@@ -1331,7 +1352,14 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 
 -(void)reloadSecondWindow{
     NSString *bundle = [secondWindow.bundleId copy];
-    if (bundle) [secondWindow openBundle:bundle];
+    if (bundle.length == 0) return;
+    [self terminateUserApplication:bundle];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        if (self->secondWindow && [self->secondWindow.bundleId isEqualToString:bundle]) {
+            [self->secondWindow openBundle:bundle];
+        }
+    });
 }
 
 -(void)fullscreenSecondWindow{
@@ -1345,10 +1373,14 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     NSString *first = [hostSession.activeBundleId copy] ?: [pinnedBundleId copy];
     NSString *second = [secondWindow.bundleId copy];
     if (!first) return;
+    [self terminateUserApplication:first];
     [self forceCloseAndReleaseImmediately];
     [hostSession invalidate];
     pendingSecondWindowBundle = second;
-    [self pinAppWithBundleId:first];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        [self pinAppWithBundleId:first];
+    });
 }
 
 -(void)swapWindows{
@@ -4213,6 +4245,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         ![previousBundleId isEqualToString:bundleId] && windowBundleHistory) {
         [windowBundleHistory addObject:previousBundleId];
         if (windowBundleHistory.count > 20) [windowBundleHistory removeObjectAtIndex:0];
+        [windowForwardHistory removeAllObjects];
     }
     UIInterfaceOrientation previousHostedOrientation =
         [self contextManagerPreferredHostedInterfaceOrientation:nil];
@@ -4365,6 +4398,28 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         return;
     }
     [windowBundleHistory removeLastObject];
+    if (!windowForwardHistory) windowForwardHistory = [NSMutableArray array];
+    if (hostSession.activeBundleId.length) [windowForwardHistory addObject:hostSession.activeBundleId];
+    restoringPreviousWindow = YES;
+    [self pinAppWithBundleId:bundle];
+    restoringPreviousWindow = NO;
+}
+
+-(void)returnForwardWindow{
+    if ([self isPanelTransitioning] || panelState != POPanelStateOpen) return;
+    NSString *bundle = windowForwardHistory.lastObject;
+    while (bundle && (![POApplicationHelper isUserFacingApplicationBundleId:bundle] ||
+                      [bundle isEqualToString:hostSession.activeBundleId])) {
+        [windowForwardHistory removeLastObject];
+        bundle = windowForwardHistory.lastObject;
+    }
+    if (bundle.length == 0) {
+        [self showCenterMessage:@"没有下一个窗口。"];
+        return;
+    }
+    [windowForwardHistory removeLastObject];
+    if (!windowBundleHistory) windowBundleHistory = [NSMutableArray array];
+    if (hostSession.activeBundleId.length) [windowBundleHistory addObject:hostSession.activeBundleId];
     restoringPreviousWindow = YES;
     [self pinAppWithBundleId:bundle];
     restoringPreviousWindow = NO;
@@ -4373,6 +4428,11 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 -(void)returnPreviousSecondWindow{
     if ([self isPanelTransitioning] || panelState != POPanelStateOpen || !secondWindow) return;
     [secondWindow returnToPreviousBundle];
+}
+
+-(void)returnForwardSecondWindow{
+    if ([self isPanelTransitioning] || panelState != POPanelStateOpen || !secondWindow) return;
+    [secondWindow returnToForwardBundle];
 }
 
 -(void)takeScreenshot{
