@@ -20,12 +20,17 @@ static BOOL POExternalDeviceIsLocked(void) {
     if (!manager && [lockScreenManagerClass respondsToSelector:sharedSelector]) {
         manager = ((id (*)(id, SEL))objc_msgSend)(lockScreenManagerClass, sharedSelector);
     }
-    for (NSString *selectorName in @[@"isUILocked", @"isLockScreenVisible"]) {
-        SEL selector = NSSelectorFromString(selectorName);
-        if ([manager respondsToSelector:selector] &&
-            ((BOOL (*)(id, SEL))objc_msgSend)(manager, selector)) {
-            return YES;
-        }
+    SEL lockedSelector = NSSelectorFromString(@"isUILocked");
+    if ([manager respondsToSelector:lockedSelector]) {
+        BOOL locked = ((BOOL (*)(id, SEL))objc_msgSend)(manager, lockedSelector);
+        SEL unlockingSelector = NSSelectorFromString(@"isUIUnlocking");
+        BOOL unlocking = [manager respondsToSelector:unlockingSelector] &&
+            ((BOOL (*)(id, SEL))objc_msgSend)(manager, unlockingSelector);
+        return locked || unlocking;
+    }
+    SEL visibleSelector = NSSelectorFromString(@"isLockScreenVisible");
+    if ([manager respondsToSelector:visibleSelector]) {
+        return ((BOOL (*)(id, SEL))objc_msgSend)(manager, visibleSelector);
     }
     return !UIApplication.sharedApplication.protectedDataAvailable;
 }
