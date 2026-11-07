@@ -117,6 +117,15 @@ static BOOL PORemoveHostedKeyboardViews(UIView *stack) {
 #define PO_SCALED_PROGRAMMATIC_CLOSE_DURATION 0.22
 #define PO_SCALED_CLOSE_POST_COMMIT_CLEANUP_DELAY 0.035
 #define PO_HANDLE_GUARD_MINIMUM_REVEAL_DURATION 2.0
+#define PO_NAVIGATION_HISTORY_LIMIT 5
+
+static void POAppendNavigationHistory(NSMutableArray<NSString *> *history, NSString *bundleId) {
+    if (!history || bundleId.length == 0) return;
+    [history addObject:bundleId];
+    while (history.count > PO_NAVIGATION_HISTORY_LIMIT) {
+        [history removeObjectAtIndex:0];
+    }
+}
 
 typedef NS_OPTIONS(NSUInteger, POKeyboardZoomSuspensionReason) {
     POKeyboardZoomSuspensionNone     = 0,
@@ -554,8 +563,7 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     if (recordHistory && previousBundleId.length &&
         ![previousBundleId isEqualToString:bundle] &&
         [POApplicationHelper isUserFacingApplicationBundleId:previousBundleId]) {
-        [bundleHistory addObject:previousBundleId];
-        if (bundleHistory.count > 20) [bundleHistory removeObjectAtIndex:0];
+        POAppendNavigationHistory(bundleHistory, previousBundleId);
         [forwardHistory removeAllObjects];
     }
     keyboardDismissalPending = NO;
@@ -592,7 +600,7 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     if (!bundle) return;
     [bundleHistory removeLastObject];
     if (!forwardHistory) forwardHistory = [NSMutableArray array];
-    if (self.bundleId.length) [forwardHistory addObject:self.bundleId];
+    POAppendNavigationHistory(forwardHistory, self.bundleId);
     [self openBundle:bundle recordHistory:NO];
 }
 - (void)returnToForwardBundle {
@@ -605,7 +613,7 @@ static id POCenterSharedController(NSString *name, NSString *accessor) {
     if (!bundle) return;
     [forwardHistory removeLastObject];
     if (!bundleHistory) bundleHistory = [NSMutableArray array];
-    if (self.bundleId.length) [bundleHistory addObject:self.bundleId];
+    POAppendNavigationHistory(bundleHistory, self.bundleId);
     [self openBundle:bundle recordHistory:NO];
 }
 - (void)stop {
@@ -4243,8 +4251,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     NSString *previousBundleId = [hostSession.activeBundleId copy] ?: [pinnedBundleId copy];
     if (switchingVisibleTarget && !restoringPreviousWindow && previousBundleId.length &&
         ![previousBundleId isEqualToString:bundleId] && windowBundleHistory) {
-        [windowBundleHistory addObject:previousBundleId];
-        if (windowBundleHistory.count > 20) [windowBundleHistory removeObjectAtIndex:0];
+        POAppendNavigationHistory(windowBundleHistory, previousBundleId);
         [windowForwardHistory removeAllObjects];
     }
     UIInterfaceOrientation previousHostedOrientation =
@@ -4399,7 +4406,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     }
     [windowBundleHistory removeLastObject];
     if (!windowForwardHistory) windowForwardHistory = [NSMutableArray array];
-    if (hostSession.activeBundleId.length) [windowForwardHistory addObject:hostSession.activeBundleId];
+    POAppendNavigationHistory(windowForwardHistory, hostSession.activeBundleId);
     restoringPreviousWindow = YES;
     [self pinAppWithBundleId:bundle];
     restoringPreviousWindow = NO;
@@ -4419,7 +4426,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     }
     [windowForwardHistory removeLastObject];
     if (!windowBundleHistory) windowBundleHistory = [NSMutableArray array];
-    if (hostSession.activeBundleId.length) [windowBundleHistory addObject:hostSession.activeBundleId];
+    POAppendNavigationHistory(windowBundleHistory, hostSession.activeBundleId);
     restoringPreviousWindow = YES;
     [self pinAppWithBundleId:bundle];
     restoringPreviousWindow = NO;
