@@ -118,7 +118,6 @@ static BOOL PORemoveHostedKeyboardViews(UIView *stack) {
 #define PO_SCALED_CLOSE_POST_COMMIT_CLEANUP_DELAY 0.035
 #define PO_HANDLE_GUARD_MINIMUM_REVEAL_DURATION 2.0
 #define PO_NAVIGATION_HISTORY_LIMIT 5
-#define PO_WINDOW_HANDLE_APP_PICKER_DRAG_DISTANCE 56.0
 
 static void POAppendNavigationHistory(NSMutableArray<NSString *> *history, NSString *bundleId) {
     if (!history || bundleId.length == 0) return;
@@ -178,7 +177,6 @@ typedef NS_ENUM(NSUInteger, POHandlePanIntent) {
     POHandlePanIntentOpenPanel,
     POHandlePanIntentClosePanel,
     POHandlePanIntentVerticalCardMove,
-    POHandlePanIntentChooseApplication,
 };
 
 static BOOL POIsConcretePresentationOrientation(UIInterfaceOrientation orientation) {
@@ -215,16 +213,13 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = UIColor.clearColor;
-    UIVisualEffectView *background = [[UIVisualEffectView alloc]
-        initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterial]];
-    background.frame = self.view.bounds;
-    background.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    background.userInteractionEnabled = NO;
-    [self.view addSubview:background];
     UISearchBar *search = [[UISearchBar alloc] init];
     self.searchBar = search;
     search.placeholder = @"应用库";
     search.searchBarStyle = UISearchBarStyleMinimal;
+    search.backgroundColor = UIColor.clearColor;
+    search.backgroundImage = [[UIImage alloc] init];
+    search.searchTextField.backgroundColor = [UIColor colorWithWhite:0.5 alpha:0.12];
     search.delegate = self;
     search.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:search];
@@ -245,8 +240,8 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     if (@available(iOS 15.0, *)) bottom = self.view.keyboardLayoutGuide.topAnchor;
     [NSLayoutConstraint activateConstraints:@[
         [search.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:8],
-        [search.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:4],
-        [search.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-4],
+        [search.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [search.widthAnchor constraintEqualToAnchor:self.view.widthAnchor multiplier:0.5],
         [search.heightAnchor constraintEqualToConstant:56],
         [self.collectionView.topAnchor constraintEqualToAnchor:search.bottomAnchor],
         [self.collectionView.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor],
@@ -318,8 +313,8 @@ static CGFloat POPresentationAngleForOrientation(UIInterfaceOrientation orientat
     UIImageView *icon = (UIImageView *)[cell.contentView viewWithTag:1];
     UILabel *name = (UILabel *)[cell.contentView viewWithTag:2];
     if (!icon) {
-        cell.contentView.backgroundColor = [UIColor.secondarySystemBackgroundColor colorWithAlphaComponent:0.65];
-        cell.contentView.layer.cornerRadius = 16;
+        cell.contentView.backgroundColor = UIColor.clearColor;
+        cell.contentView.layer.cornerRadius = 0;
         icon = [[UIImageView alloc] init];
         icon.tag = 1;
         icon.contentMode = UIViewContentModeScaleAspectFit;
@@ -1048,19 +1043,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     oppositeHandle.allowsVerticalMovement = YES;
     self.handle.allowsVerticalMovement = YES;
     oppositeHandle.layoutMode = POHandleLayoutModeLandscapeFixedBottomLeft;
-    [self.view addSubview:oppositeHandle];
-    oppositeHandle.hidden = YES;
     oppositeHandle.userInteractionEnabled = NO;
-    handleCenterMenu = [[POCenterMenuController alloc] init];
-    POCenterMenuController *targetPreview = handleCenterMenu;
-    targetPreview.view.frame = CGRectMake(0, 0, 328, 328);
-    [targetPreview.view setNeedsLayout];
-    [targetPreview.view layoutIfNeeded];
-    appSearchTarget = targetPreview.wheel;
-    [appSearchTarget removeFromSuperview];
-    appSearchTarget.hidden = YES;
-    appSearchTarget.userInteractionEnabled = NO;
-    [self.view addSubview:appSearchTarget];
     handleSearchPreview = [[UIImageView alloc] initWithFrame:CGRectMake(0, 0, 40, 40)];
     handleSearchPreview.contentMode = UIViewContentModeScaleAspectFit;
     handleSearchPreview.userInteractionEnabled = NO;
@@ -1159,7 +1142,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 
 -(void)layoutAdditionalControls{
     if (!oppositeHandle || !self.handle || CGRectIsEmpty(self.view.bounds)) return;
-    oppositeHandle.hidden = YES;
+    oppositeHandle.hidden = panelState != POPanelStateClosed;
     CGFloat size = CGRectGetWidth(oppositeHandle.bounds);
     CGPoint primaryCenter = [self.handle.superview convertPoint:self.handle.center toView:self.view];
     CGFloat minimumY = self.view.safeAreaInsets.top + size / 2 + HANDLE_EDGE_GAP;
@@ -1205,17 +1188,10 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     BOOL primaryScreenLeft = primaryWindowPoint.x < oppositeWindowPoint.x;
     self.handle.opacityPreferenceKey = primaryScreenLeft ? @"leftHandleOpacity" : @"rightHandleOpacity";
     oppositeHandle.opacityPreferenceKey = primaryScreenLeft ? @"rightHandleOpacity" : @"leftHandleOpacity";
-    CGFloat wheelDiameter = POCenterWheelDiameter(self.view);
-    CGSize previewSize = CGSizeMake(wheelDiameter + 24, wheelDiameter + 24);
-    if (!CGSizeEqualToSize(handleCenterMenu.view.bounds.size, previewSize)) {
-        handleCenterMenu.view.bounds = (CGRect){CGPointZero, previewSize};
-        [handleCenterMenu.view setNeedsLayout];
-        [handleCenterMenu.view layoutIfNeeded];
-    }
-    appSearchTarget.center = CGPointMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds));
     if (appSearchNavigation) {
         appSearchNavigation.view.bounds = self.view.bounds;
-        appSearchNavigation.view.center = appSearchTarget.center;
+        appSearchNavigation.view.center = CGPointMake(CGRectGetMidX(self.view.bounds),
+                                                      CGRectGetMidY(self.view.bounds));
     }
     [self layoutWindowControls];
 }
@@ -1427,11 +1403,14 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     if (appSearchNavigation || !self.view.window || UIApplication.sharedApplication.protectedDataAvailable == NO) return;
     [self dismissPresentedQuickSwitchMenuImmediately];
     [self cancelAutoNubTimer];
-    POCenterMenuController *menu = [[POCenterMenuController alloc] init];
+    POAppSearchController *search = [[POAppSearchController alloc] init];
     __weak typeof(self) weakSelf = self;
-    menu.cancellation = ^{ [weakSelf dismissAppSearch]; };
-    menu.action = ^(NSInteger action) { [weakSelf performCenterAction:action]; };
-    appSearchNavigation = [[UINavigationController alloc] initWithRootViewController:menu];
+    search.cancellation = ^{ [weakSelf dismissAppSearch]; };
+    search.selection = ^(NSString *bundle) {
+        [weakSelf dismissAppSearch];
+        [weakSelf pinAppWithBundleId:bundle];
+    };
+    appSearchNavigation = [[UINavigationController alloc] initWithRootViewController:search];
     appSearchNavigation.view.backgroundColor = UIColor.clearColor;
     [self addChildViewController:appSearchNavigation];
     [self.view addSubview:appSearchNavigation.view];
@@ -1480,19 +1459,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 }
 
 -(void)showApplicationLibrary{
-        if (!appSearchNavigation) [self showAppSearch];
-        if (!appSearchNavigation) return;
-        POAppSearchController *search = [[POAppSearchController alloc] init];
-        __weak typeof(self) weakSelf = self;
-        search.cancellation = ^{ [weakSelf dismissAppSearch]; };
-        search.selection = ^(NSString *bundle) {
-            [weakSelf dismissAppSearch];
-            [weakSelf pinAppWithBundleId:bundle];
-        };
-        appSearchTarget.hidden = YES;
-        handleSearchPreview.hidden = YES;
-        [appSearchNavigation setNavigationBarHidden:NO animated:NO];
-        [appSearchNavigation setViewControllers:@[search] animated:NO];
+    [self showAppSearch];
 }
 
 -(void)performResolvedCenterAction:(NSInteger)action{
@@ -1714,7 +1681,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 -(void)updateInteractionBackdropsAnimated:(BOOL)animated{
     self.handle.forceOpaque = panelState != POPanelStateClosed;
     [self layoutWindowControls];
-    oppositeHandle.hidden = YES;
+    oppositeHandle.hidden = panelState != POPanelStateClosed;
     if (!panelBackdropView || !quickSwitchBackdropView || !scrollView) {
         return;
     }
@@ -1808,7 +1775,8 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
         }
     }
     CGPoint oppositePoint = [oppositeHandle convertPoint:point fromView:self.view.window];
-    if (!oppositeHandle.hidden && [oppositeHandle pointInside:oppositePoint withEvent:event]) {
+    if (oppositeHandle.superview && !oppositeHandle.hidden &&
+        [oppositeHandle pointInside:oppositePoint withEvent:event]) {
         return oppositeHandle;
     }
     CGPoint handlePointInHandle = [self.handle convertPoint:point fromView:self.view.window];
@@ -4358,13 +4326,34 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 #pragma mark - MHHandleDelegate
 
 -(void)handle:(POHandle *)handle didReceiveTap:(UIGestureRecognizer *)recognizer{
-    (void)handle;
-    (void)recognizer;
+    [self cancelAutoNubTimer];
+    if ([self isPanelTransitioning] || scrollView.dragging || scrollView.decelerating) {
+        return;
+    }
+    if (panelState == POPanelStateClosed) {
+        if ([self isHandleActivationGuardActive]) {
+            self.handle.isNubbed = NO;
+            [self resetAutoNubTimerWithMinimumDelay:PO_HANDLE_GUARD_MINIMUM_REVEAL_DURATION];
+            return;
+        }
+        [self open];
+        return;
+    }
+    if (panelState == POPanelStateOpen && [self shouldHandleTapRestoreKeyboardZoom]) {
+        [self restoreKeyboardZoomFromHandleTap];
+        [self resetAutoNubTimer];
+        return;
+    }
+    if (panelState == POPanelStateOpen) {
+        [self close];
+    }
 }
 
 -(void)handle:(POHandle *)handle didReceiveDoubleTap:(UIGestureRecognizer *)recognizer{
-    (void)handle;
-    (void)recognizer;
+    if (recognizer.state != UIGestureRecognizerStateRecognized ||
+        ![self isPanelFullyClosedAndIdle] || [self isPanelTransitioning] ||
+        appSearchNavigation || presentedQuickSwitchMenu || pinnedBundleId.length == 0) return;
+    [self openApplicationExternallyFromQuickSwitch:[pinnedBundleId copy]];
 }
 
 -(void)fullscreenPrimaryWindow{
@@ -4475,45 +4464,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     [pullOverWindow applyInterfaceOrientation:target duration:0.25 completion:nil];
 }
 
--(void)handleWindowHandlePan:(UIPanGestureRecognizer *)recognizer{
-    if (recognizer.state == UIGestureRecognizerStateBegan) {
-        handlePanIntent = POHandlePanIntentNone;
-        if (panelState != POPanelStateClosed || appSearchNavigation ||
-            presentedQuickSwitchMenu || self.handle.hidden) {
-            return;
-        }
-        CGPoint velocity = [recognizer velocityInView:self.view];
-        if (fabs(velocity.x) <= fabs(velocity.y) || velocity.x >= 0) return;
-        [self cancelAutoNubTimer];
-        self.handle.isNubbed = NO;
-        handlePanIntent = POHandlePanIntentChooseApplication;
-        return;
-    }
-
-    if (handlePanIntent != POHandlePanIntentChooseApplication) return;
-
-    if (recognizer.state == UIGestureRecognizerStateChanged) {
-        CGFloat translationX = [recognizer translationInView:self.view].x;
-        if (translationX <= -PO_WINDOW_HANDLE_APP_PICKER_DRAG_DISTANCE) {
-            handlePanIntent = POHandlePanIntentNone;
-            [scrollView setContentOffset:CGPointZero animated:NO];
-            self.handle.isNubbed = NO;
-            [self showApplicationLibrary];
-        }
-        return;
-    }
-
-    if (recognizer.state == UIGestureRecognizerStateEnded ||
-        recognizer.state == UIGestureRecognizerStateCancelled ||
-        recognizer.state == UIGestureRecognizerStateFailed) {
-        handlePanIntent = POHandlePanIntentNone;
-        [self resetAutoNubTimer];
-    }
-}
-
 -(void)handle:(POHandle *)handle didPanPanel:(UIPanGestureRecognizer *)recognizer{
-    [self handleWindowHandlePan:recognizer];
-    return;
     if (recognizer.state == UIGestureRecognizerStateBegan) {
         CGPoint velocity = [recognizer velocityInView:self.view];
         draggingHandleVertically = fabs(velocity.y) > fabs(velocity.x);
@@ -4608,7 +4559,6 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 
             case POHandlePanIntentNone:
             case POHandlePanIntentVerticalCardMove:
-            case POHandlePanIntentChooseApplication:
                 return;
         }
 
@@ -4689,8 +4639,13 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 }
 
 -(void)handle:(POHandle *)handle didLongPress:(UILongPressGestureRecognizer *)recognizer{
-    (void)handle;
-    (void)recognizer;
+    if (recognizer.state != UIGestureRecognizerStateBegan || handle != self.handle ||
+        ![self canBeginQuickSwitchSession]) {
+        return;
+    }
+    [self cancelAutoNubTimer];
+    self.handle.isNubbed = NO;
+    [self showApplicationLibrary];
     return;
     if (recognizer.state == UIGestureRecognizerStateBegan) {
         handleSearchDragActive = [self canBeginQuickSwitchSession] &&
