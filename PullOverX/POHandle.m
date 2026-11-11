@@ -154,6 +154,7 @@
         quickSwitchLongPress.minimumPressDuration = .3f;
         quickSwitchLongPress.delegate = self;
         quickSwitchLongPress.cancelsTouchesInView = NO;
+        quickSwitchLongPress.enabled = NO;
         [self addGestureRecognizer:quickSwitchLongPress];
         [_tapGestureRecognizer requireGestureRecognizerToFail:quickSwitchLongPress];
         [_doubleTapGestureRecognizer requireGestureRecognizerToFail:quickSwitchLongPress];

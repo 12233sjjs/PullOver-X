@@ -118,6 +118,7 @@ static BOOL PORemoveHostedKeyboardViews(UIView *stack) {
 #define PO_SCALED_CLOSE_POST_COMMIT_CLEANUP_DELAY 0.035
 #define PO_HANDLE_GUARD_MINIMUM_REVEAL_DURATION 2.0
 #define PO_NAVIGATION_HISTORY_LIMIT 5
+#define PO_WINDOW_HANDLE_APP_PICKER_DRAG_DISTANCE 56.0
 
 static void POAppendNavigationHistory(NSMutableArray<NSString *> *history, NSString *bundleId) {
     if (!history || bundleId.length == 0) return;
@@ -177,6 +178,7 @@ typedef NS_ENUM(NSUInteger, POHandlePanIntent) {
     POHandlePanIntentOpenPanel,
     POHandlePanIntentClosePanel,
     POHandlePanIntentVerticalCardMove,
+    POHandlePanIntentChooseApplication,
 };
 
 static BOOL POIsConcretePresentationOrientation(UIInterfaceOrientation orientation) {
@@ -1047,6 +1049,8 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     self.handle.allowsVerticalMovement = YES;
     oppositeHandle.layoutMode = POHandleLayoutModeLandscapeFixedBottomLeft;
     [self.view addSubview:oppositeHandle];
+    oppositeHandle.hidden = YES;
+    oppositeHandle.userInteractionEnabled = NO;
     handleCenterMenu = [[POCenterMenuController alloc] init];
     POCenterMenuController *targetPreview = handleCenterMenu;
     targetPreview.view.frame = CGRectMake(0, 0, 328, 328);
@@ -1155,7 +1159,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 
 -(void)layoutAdditionalControls{
     if (!oppositeHandle || !self.handle || CGRectIsEmpty(self.view.bounds)) return;
-    oppositeHandle.hidden = panelState != POPanelStateClosed;
+    oppositeHandle.hidden = YES;
     CGFloat size = CGRectGetWidth(oppositeHandle.bounds);
     CGPoint primaryCenter = [self.handle.superview convertPoint:self.handle.center toView:self.view];
     CGFloat minimumY = self.view.safeAreaInsets.top + size / 2 + HANDLE_EDGE_GAP;
@@ -1710,7 +1714,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 -(void)updateInteractionBackdropsAnimated:(BOOL)animated{
     self.handle.forceOpaque = panelState != POPanelStateClosed;
     [self layoutWindowControls];
-    oppositeHandle.hidden = panelState != POPanelStateClosed;
+    oppositeHandle.hidden = YES;
     if (!panelBackdropView || !quickSwitchBackdropView || !scrollView) {
         return;
     }
@@ -4354,34 +4358,13 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 #pragma mark - MHHandleDelegate
 
 -(void)handle:(POHandle *)handle didReceiveTap:(UIGestureRecognizer *)recognizer{
-    [self cancelAutoNubTimer];
-    if ([self isPanelTransitioning] || scrollView.dragging || scrollView.decelerating) {
-        return;
-    }
-    if (panelState == POPanelStateClosed) {
-        if ([self isHandleActivationGuardActive]) {
-            self.handle.isNubbed = NO;
-            [self resetAutoNubTimerWithMinimumDelay:PO_HANDLE_GUARD_MINIMUM_REVEAL_DURATION];
-            return;
-        }
-        [self open];
-        return;
-    }
-    if (panelState == POPanelStateOpen && [self shouldHandleTapRestoreKeyboardZoom]) {
-        [self restoreKeyboardZoomFromHandleTap];
-        [self resetAutoNubTimer];
-        return;
-    }
-    if (panelState == POPanelStateOpen) {
-        [self close];
-    }
+    (void)handle;
+    (void)recognizer;
 }
 
 -(void)handle:(POHandle *)handle didReceiveDoubleTap:(UIGestureRecognizer *)recognizer{
-    if (recognizer.state != UIGestureRecognizerStateRecognized ||
-        ![self isPanelFullyClosedAndIdle] || [self isPanelTransitioning] ||
-        appSearchNavigation || presentedQuickSwitchMenu || pinnedBundleId.length == 0) return;
-    [self openApplicationExternallyFromQuickSwitch:[pinnedBundleId copy]];
+    (void)handle;
+    (void)recognizer;
 }
 
 -(void)fullscreenPrimaryWindow{
@@ -4492,7 +4475,45 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
     [pullOverWindow applyInterfaceOrientation:target duration:0.25 completion:nil];
 }
 
+-(void)handleWindowHandlePan:(UIPanGestureRecognizer *)recognizer{
+    if (recognizer.state == UIGestureRecognizerStateBegan) {
+        handlePanIntent = POHandlePanIntentNone;
+        if (panelState != POPanelStateClosed || appSearchNavigation ||
+            presentedQuickSwitchMenu || self.handle.hidden) {
+            return;
+        }
+        CGPoint velocity = [recognizer velocityInView:self.view];
+        if (fabs(velocity.x) <= fabs(velocity.y) || velocity.x >= 0) return;
+        [self cancelAutoNubTimer];
+        self.handle.isNubbed = NO;
+        handlePanIntent = POHandlePanIntentChooseApplication;
+        return;
+    }
+
+    if (handlePanIntent != POHandlePanIntentChooseApplication) return;
+
+    if (recognizer.state == UIGestureRecognizerStateChanged) {
+        CGFloat translationX = [recognizer translationInView:self.view].x;
+        if (translationX <= -PO_WINDOW_HANDLE_APP_PICKER_DRAG_DISTANCE) {
+            handlePanIntent = POHandlePanIntentNone;
+            [scrollView setContentOffset:CGPointZero animated:NO];
+            self.handle.isNubbed = NO;
+            [self showApplicationLibrary];
+        }
+        return;
+    }
+
+    if (recognizer.state == UIGestureRecognizerStateEnded ||
+        recognizer.state == UIGestureRecognizerStateCancelled ||
+        recognizer.state == UIGestureRecognizerStateFailed) {
+        handlePanIntent = POHandlePanIntentNone;
+        [self resetAutoNubTimer];
+    }
+}
+
 -(void)handle:(POHandle *)handle didPanPanel:(UIPanGestureRecognizer *)recognizer{
+    [self handleWindowHandlePan:recognizer];
+    return;
     if (recognizer.state == UIGestureRecognizerStateBegan) {
         CGPoint velocity = [recognizer velocityInView:self.view];
         draggingHandleVertically = fabs(velocity.y) > fabs(velocity.x);
@@ -4587,6 +4608,7 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 
             case POHandlePanIntentNone:
             case POHandlePanIntentVerticalCardMove:
+            case POHandlePanIntentChooseApplication:
                 return;
         }
 
@@ -4667,6 +4689,9 @@ hostedInterfaceOrientationDidChange:(UIInterfaceOrientation)orientation systemAn
 }
 
 -(void)handle:(POHandle *)handle didLongPress:(UILongPressGestureRecognizer *)recognizer{
+    (void)handle;
+    (void)recognizer;
+    return;
     if (recognizer.state == UIGestureRecognizerStateBegan) {
         handleSearchDragActive = [self canBeginQuickSwitchSession] &&
             !(handle == self.handle && panelState != POPanelStateClosed);
